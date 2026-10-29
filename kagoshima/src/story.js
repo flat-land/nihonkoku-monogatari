@@ -368,7 +368,7 @@ const STORY = {
     await Q([['satsumasoldier', '伝令！ 長州勢が 蛤御門に攻めかかっちょります！\n会津が押されちょる！', '伝令！ 長州軍が 蛤御門に攻めかかっています！\n会津が押されています！'], ['saigo', '乾門から回り込むっど！\n新八、ついて来い！', '乾門から回り込むぞ！\n新八、ついて来い！']]);
     await kassen({
       title: '禁門の変・蛤御門', bg: 'kyoto', goal: 'rout', themUnit: 'choshusoldier', usUnit: 'satsumasoldier', usFx: 'gun', attackName: '撃ちかける',
-      us: { name: '会津・薩摩', troops: 1500, power: 90, leader: '西郷' }, them: { name: '長州勢', troops: 1600, power: 160 }, themAttack: '長州勢が 御門に押し寄せる！', moraleDiv: 12,
+      us: { name: '会津・薩摩', troops: 2000, power: 90, leader: '西郷' }, them: { name: '長州勢', troops: 1600, power: 160 }, themAttack: '長州勢が 御門に押し寄せる！', moraleDiv: 20,
       intro: '御所の門をめぐり、長州と会津・薩摩が激突する！', rally: '西郷「薩摩の兵は 一歩も退かん！」',
       tactics: [{ id: 'flank', name: '乾門から側面を突く', desc: '西郷の策。敵の横腹を突き、兵力と士気を大きく削る', msg: '西郷「今じゃ、横から突っ込めぇ！」\n薩摩兵が長州勢の側面に躍りこんだ！', troops: 400, morale: 22 }, { id: 'aim', name: '大将を狙い撃て', desc: '次の攻撃で敵の士気を大きく削る', msg: '「馬上の老将を狙え！」', aim: 1 }],
     });
@@ -510,7 +510,7 @@ const STORY = {
     bgm('war');
     await kassen({
       title: '鳥羽・伏見の戦い', bg: 'field', goal: 'rout', themUnit: 'bakufusoldier', usUnit: 'satsumasoldier', usFx: 'boom', attackName: '砲撃する',
-      us: { name: '薩摩・長州', troops: 5000, power: 230 }, them: { name: '旧幕府軍', troops: 15000, power: 560 }, themAttack: '旧幕府軍が 押し寄せる！', moraleDiv: 50,
+      us: { name: '薩摩・長州', troops: 5000, power: 230 }, them: { name: '旧幕府軍', troops: 15000, power: 560 }, themAttack: '旧幕府軍が 押し寄せる！', moraleDiv: 70,
       intro: '小枝橋で、薩摩の大砲が火を噴いた。戊辰戦争の始まりである！', rally: '大山「弥助砲、撃てぇ！」',
       tactics: [{ id: 'nishiki', name: '錦の御旗を掲げる', desc: '天皇の軍であることを示す旗。敵の士気を大きく下げる', msg: '新政府軍の陣に、錦の御旗がひるがえった！\n「官軍じゃ！ 我らは官軍ぞ！」\n旧幕府軍に動揺が走る！', morale: 40, rally: 20 }, { id: 'aim', name: '小枝橋の砲撃', desc: '次の攻撃で、敵の士気を大きく削る', msg: '大山「街道の敵を 狙い撃つっど！」', aim: 1 }],
     });
@@ -601,7 +601,7 @@ const STORY = {
   async tsurugajo() {
     await kassen({
       title: '鶴ヶ城の攻防', bg: 'aizu', goal: 'rout', themUnit: 'bakufusoldier', usUnit: 'govsoldier', usFx: 'boom', attackName: '砲撃する',
-      us: { name: '新政府軍', troops: 3000, power: 250 }, them: { name: '鶴ヶ城の籠城兵', troops: 3000, power: 230 }, themAttack: '城の石垣から 銃火が走る！', moraleDiv: 22,
+      us: { name: '新政府軍', troops: 3000, power: 250 }, them: { name: '鶴ヶ城の籠城兵', troops: 3000, power: 230 }, themAttack: '城の石垣から 銃火が走る！', moraleDiv: 28,
       intro: '一か月に及ぶ籠城。鶴ヶ城は、なお落ちない――',
       tactics: [{ id: 'odayama', name: '小田山から砲撃', desc: '城を見下ろす山から、大砲を撃ちこむ', msg: '大山「小田山から 撃ち下ろせぇ！」\n砲弾が 天守に命中した！', troops: 600, morale: 15 }, { id: 'aim', name: '城門を狙う', desc: '次の攻撃で敵の士気を大きく削る', msg: '「城門じゃ！ 城門を狙え！」', aim: 1 }],
     });

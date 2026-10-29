@@ -170,8 +170,8 @@ function qty(max, unit, label) {
 const fadeEl = $('#fade'), tintEl = $('#tint'), screenEl = $('#screen');
 async function fadeOut(ms = 450) { fadeEl.style.transition = `opacity ${ms}ms`; fadeEl.style.opacity = 1; await sleep(ms); }
 async function fadeIn(ms = 450) { fadeEl.style.transition = `opacity ${ms}ms`; fadeEl.style.opacity = 0; await sleep(ms); }
-function shake(big) { screenEl.classList.remove('shake', 'shake2'); void screenEl.offsetWidth; screenEl.classList.add(big ? 'shake2' : 'shake'); }
-function flashScreen(col = '#fff') { screenEl.style.setProperty('--flash', col); screenEl.classList.remove('flash'); void screenEl.offsetWidth; screenEl.classList.add('flash'); }
+function shake(big) { screenEl.classList.remove('shake', 'shake2'); void screenEl.offsetWidth; screenEl.classList.add(big ? 'shake2' : 'shake'); clearTimeout(shake.t); shake.t = setTimeout(() => screenEl.classList.remove('shake', 'shake2'), 500); }
+function flashScreen(col = '#fff') { screenEl.style.setProperty('--flash', col); screenEl.classList.remove('flash'); void screenEl.offsetWidth; screenEl.classList.add('flash'); clearTimeout(flashScreen.t); flashScreen.t = setTimeout(() => screenEl.classList.remove('flash'), 450); }
 async function card(title, sub, ms = 4200) {
   const c = el('div', 'card'); c.innerHTML = `<div class="ct">${esc(title)}</div><div class="cs">${esc(sub || '').replace(/\n/g, '<br>')}</div>`;
   await sleep(30); c.classList.add('on'); await sleep(800); await waitOk(ms); c.classList.remove('on'); await sleep(600); c.remove();
@@ -1022,10 +1022,11 @@ async function victory(B) {
 async function kassen(def) {
   hideDlg();
   const prevScene = G.scene, prevBgm = Audio8.cur;
+  let retry = 0;
   while (true) {
-    const lv = partyLv();
+    const lv = partyLv(), bonus = 1 + .3 * retry;
     const K = G.K = {
-      def, turn: 1, us: { ...def.us, mt: def.us.troops, mm: 100, morale: def.us.morale || 100 }, them: { ...def.them, mt: def.them.troops, mm: 100, morale: def.them.morale || 100 },
+      def, turn: 1, us: { ...def.us, troops: Math.round(def.us.troops * bonus), mt: Math.round(def.us.troops * bonus), mm: 100, morale: def.us.morale || 100 }, them: { ...def.them, mt: def.them.troops, mm: 100, morale: def.them.morale || 100 },
       used: {}, aim: 0, storm: 0, guard: false, fx: [], hitUs: 0, hitThem: 0, lv,
     };
     SFX.play('drum'); flashScreen(); await sleep(300);
@@ -1081,6 +1082,7 @@ async function kassen(def) {
     bgm('sad');
     const again = await pickOne(null, def.loseMsg || '味方の陣が崩れた……', null, ['もう一度 采配をふるう', 'ひとまず退く（最後の記録へ）'], { x: 120, y: 110, w: 250 });
     if (again === 1) { Audio8.cur = null; throw GAMEOVER; }
+    retry++; toast('味方の援軍が加わった！（兵力アップ）');
   }
 }
 function drawKassen() {

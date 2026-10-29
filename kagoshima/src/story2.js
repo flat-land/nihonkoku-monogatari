@@ -210,7 +210,7 @@ Object.assign(STORY, {
       });
       await kassen({
         title: '熊本城総攻撃', bg: 'castle', goal: 'survive', turns: 5, themUnit: 'govsoldier', usUnit: 'satsumasoldier', usFx: 'slash', attackName: '斬り込む',
-        us: { name: '薩軍', troops: 13000, power: 560 }, them: { name: '熊本鎮台', troops: 4000, power: 620 }, themAttack: '城の石垣から 銃火が降りそそぐ！', moraleDiv: 40,
+        us: { name: '薩軍', troops: 13000, power: 560 }, them: { name: '熊本鎮台', troops: 4000, power: 620 }, themAttack: '城の石垣から 銃火が降りそそぐ！', moraleDiv: 75,
         intro: '「武者返し」の石垣が、薩軍の前にそびえ立つ――', rally: '桐野「チェストォ！ 押せ押せぇ！」',
         tactics: [{ id: 'surround', name: '包囲を固める', desc: '無理攻めをやめ、兵を休ませる', msg: '「無理に攻むっな！ 囲んで待て！」', heal: 1500, rally: 15 }, { id: 'kiri', name: '決死の斬り込み', desc: '城門へ斬りこみ、敵の士気を削る', msg: '薩軍の斬り込み隊が 城門に殺到した！', troops: 400, morale: 15 }],
       });
@@ -222,7 +222,7 @@ Object.assign(STORY, {
       });
       await kassen({
         title: '熊本城籠城戦', bg: 'castle', goal: 'survive', turns: 6, themUnit: 'satsumasoldier', usUnit: 'govsoldier', usFx: 'gun', attackName: '撃ちかける',
-        us: { name: '熊本鎮台', troops: 4000, power: 260 }, them: { name: '薩軍', troops: 13000, power: 300 }, themAttack: '薩軍が 抜刀して 城へ駆け上がる！', moraleDiv: 12,
+        us: { name: '熊本鎮台', troops: 4000, power: 260 }, them: { name: '薩軍', troops: 13000, power: 300 }, themAttack: '薩軍が 抜刀して 城へ駆け上がる！', moraleDiv: 38,
         intro: '雪の熊本。城を守る四千の兵に、一万三千の薩軍が迫る――', rally: '仙吉「持ちこたえろ！ 援軍は必ず来る！」',
         tactics: [{ id: 'wall', name: '石垣を盾にする', desc: '2刻のあいだ、受ける被害を減らす', msg: '「武者返しの石垣に身を隠せ！」', storm: 2 }, { id: 'snipe', name: '指揮官を狙う', desc: '次の攻撃で敵の士気を大きく削る', msg: '大山「指揮をとる者を 狙い撃てぇ！」', aim: 1 }],
       });
@@ -261,7 +261,7 @@ Object.assign(STORY, {
       });
       await kassen({
         title: '田原坂の守り', bg: 'rain', goal: 'survive', turns: 7, themUnit: 'govsoldier', usUnit: 'satsumasoldier', usFx: 'slash', attackName: '斬り込む',
-        us: { name: '薩軍', troops: 3000, power: 300 }, them: { name: '政府軍', troops: 9000, power: 320 }, themAttack: 'スナイドル銃の弾雨！', moraleDiv: 12,
+        us: { name: '薩軍', troops: 3000, power: 300 }, them: { name: '政府軍', troops: 9000, power: 320 }, themAttack: 'スナイドル銃の弾雨！', moraleDiv: 40,
         intro: '雨は降る降る、人馬は濡れる――越すに越されぬ田原坂', rally: '大将「チェストォ！ 坂は渡さんど！」',
         tactics: [{ id: 'zango', name: '塹壕にこもる', desc: '2刻のあいだ、受ける被害を減らす', msg: '「塹壕に伏せぇ！」', storm: 2 }, { id: 'yoru', name: '雨の夜の斬り込み', desc: '闇にまぎれて斬りこみ、敵の兵と士気を削る', msg: '薩軍が 雨の闇から斬りこんだ！', troops: 700, morale: 18 }],
       });
@@ -272,7 +272,7 @@ Object.assign(STORY, {
       });
       await kassen({
         title: '田原坂突破', bg: 'rain', goal: 'rout', themUnit: 'satsumasoldier', usUnit: 'govsoldier', usFx: 'gun', attackName: '撃ちかける',
-        us: { name: '政府軍', troops: 9000, power: 360 }, them: { name: '薩軍', troops: 3000, power: 300 }, themAttack: '薩軍が 示現流で斬りこんでくる！', moraleDiv: 14,
+        us: { name: '政府軍', troops: 9000, power: 360 }, them: { name: '薩軍', troops: 3000, power: 300 }, themAttack: '薩軍が 示現流で斬りこんでくる！', moraleDiv: 38,
         intro: '雨は降る降る、人馬は濡れる――越すに越されぬ田原坂', rally: '仙吉「進め！ 坂の上へ！」',
         tactics: [{ id: 'batto', name: '抜刀隊を投入する', desc: '斬り込みには斬り込みで応じる', msg: '抜刀隊が 雄たけびを上げて斬りこんだ！', troops: 700, morale: 25 }, { id: 'rain', name: '雨の朝に総攻撃', desc: '濃い霧と雨にまぎれて攻める', msg: '霧の中、政府軍が一斉に動いた！', aim: 1, storm: 2 }],
       });
@@ -386,7 +386,7 @@ Object.assign(STORY, {
     Audio8.cur = null; bgm('boss');
     await kassen({
       title: '城山・最後の戦い', bg: 'shiroyama', goal: 'survive', turns: 4, themUnit: 'govsoldier', usUnit: 'satsumasoldier', usFx: 'slash', attackName: '斬り込む',
-      us: { name: '薩軍', troops: 370, power: 40 }, them: { name: '政府軍', troops: 30000, power: 62 }, themAttack: '四方から 政府軍が攻め上る！', moraleDiv: 3.5,
+      us: { name: '薩軍', troops: 370, power: 40 }, them: { name: '政府軍', troops: 30000, power: 62 }, themAttack: '四方から 政府軍が攻め上る！', moraleDiv: 7.5,
       intro: '三百七十の薩軍と、五万の政府軍。最後の戦いが始まった――', rally: '西郷「みんな、よう戦うた。……あと少しじゃ」',
       tactics: [{ id: 'iwasaki', name: '岩崎谷を固める', desc: '谷の守りを固め、兵を立て直す', msg: '「岩崎谷へ集まれぇ！」', heal: 100, rally: 20 }, { id: 'last', name: '最後の斬り込み', desc: '全員で斬りこみ、敵をひるませる', msg: '桐野「薩摩の意地、見せちゃれぇ！」', storm: 2 }],
     });
@@ -417,7 +417,7 @@ Object.assign(STORY, {
     await N('九月二十四日、午前四時。\n総攻撃の砲声が、城山に響いた。');
     await kassen({
       title: '城山総攻撃', bg: 'shiroyama', goal: 'rout', themUnit: 'satsumasoldier', usUnit: 'govsoldier', usFx: 'gun', attackName: '撃ちかける',
-      us: { name: '政府軍', troops: 30000, power: 120 }, them: { name: '薩軍', troops: 1400, power: 90 }, themAttack: '薩軍が 最後の斬り込みをかけてくる！', moraleDiv: 6,
+      us: { name: '政府軍', troops: 30000, power: 120 }, them: { name: '薩軍', troops: 1400, power: 90 }, themAttack: '薩軍が 最後の斬り込みをかけてくる！', moraleDiv: 11,
       intro: '五万の政府軍が、城山を攻め上る――', rally: '仙吉「……行こう、新八。終わらせるんだ」',
       tactics: [{ id: 'call', name: '降伏を呼びかける', desc: '薩摩の言葉で、降伏を呼びかける', msg: '新八「もうよか！ 降参してくいやんせ！」\n……何人かの兵が、刀を下ろした。', morale: 25, troops: 200 }, { id: 'aim', name: '岩崎谷を押さえる', desc: '次の攻撃で敵の士気を大きく削る', msg: '大山「岩崎谷じゃ！ 谷の口を押さえろ！」', aim: 1 }],
     });
