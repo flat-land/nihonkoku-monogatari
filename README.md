@@ -54,10 +54,10 @@
 ```
 index.html            シリーズの入口（47都道府県）
 kagoshima/index.html  薩摩の焔の画面
-style.css       見た目
-src/gfx.js      ドット絵（地形・キャラ・顔・敵・背景）をコードで描画
-src/data.js     人物・能力・わざ・道具・敵・お店の品ぞろえ
-src/engine.js   移動・会話・メニュー・戦闘・セーブの仕組み
-src/story.js    ストーリー（会話とイベント）
-src/maps.js     マップ
+kagoshima/style.css   見た目
+kagoshima/src/gfx.js      ドット絵（地形・キャラ・顔・敵・背景）をコードで描画
+kagoshima/src/data.js     人物・能力・わざ・道具・敵・お店の品ぞろえ
+kagoshima/src/engine.js   移動・会話・メニュー・戦闘・セーブの仕組み
+kagoshima/src/story.js    ストーリー（会話とイベント）
+kagoshima/src/maps.js     マップ
 ```
