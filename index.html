@@ -5,27 +5,32 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>日本國物語</title>
 <meta name="description" content="47都道府県の史実をもとにしたドットRPGシリーズ">
+<meta name="theme-color" content="#0e1226">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap" rel="stylesheet">
 <style>
-  :root { --bg: #0e1226; --win: #141a33; --line: #efe6cc; --text: #f3ecd8; --sub: #a8a090; --gold: #ffd77a; --on: #6a1e1e; }
+  :root { --bg: #0e1226; --win: #141a33; --line: #efe6cc; --text: #f3ecd8; --sub: #a8a090; --gold: #ffd77a; --on: #6a1e1e; --link: #8ac0ff; }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text); font-family: 'DotGothic16', sans-serif; }
   main { max-width: 760px; margin: 0 auto; padding: 32px 16px 48px; }
   h1 { font-size: 40px; letter-spacing: 8px; text-align: center; margin: 0; color: #fff3d0; text-shadow: 0 0 10px #e0602a, 2px 2px 0 #5a1a0a; }
   .lead { text-align: center; color: var(--sub); margin: 8px 0 28px; font-size: 14px; }
-  .feature { display: block; text-decoration: none; color: var(--text); background: var(--win); border: 2px solid var(--line); border-radius: 6px; padding: 16px; margin-bottom: 28px; box-shadow: 0 0 0 2px var(--win); }
+  .feature { display: block; text-decoration: none; color: var(--text); background: var(--win); border: 2px solid var(--line); border-radius: 6px; padding: 16px; margin-bottom: 12px; box-shadow: 0 0 0 2px var(--win); }
   .feature:hover { border-color: var(--gold); }
   .feature .no { color: var(--gold); font-size: 12px; }
   .feature .t { font-size: 22px; margin: 4px 0; }
-  .feature .s { font-size: 13px; color: var(--sub); }
+  .feature .s { font-size: 13px; color: var(--sub); line-height: 1.6; }
   .feature .play { display: inline-block; margin-top: 10px; background: var(--on); border: 2px solid var(--line); border-radius: 20px; padding: 4px 18px; font-size: 14px; }
+  .prog { font-size: 12px; color: var(--gold); margin-top: 8px; }
+  .links { margin: 0 0 28px; font-size: 12px; color: var(--sub); line-height: 1.7; }
+  .links b { color: var(--link); }
   h2 { font-size: 15px; color: var(--gold); border-bottom: 1px solid #3a4470; padding-bottom: 4px; margin: 22px 0 10px; }
   .grid { display: flex; flex-wrap: wrap; gap: 6px; }
   .p { font-size: 12px; padding: 4px 8px; border: 1px solid #3a4470; border-radius: 4px; color: var(--sub); }
   .p.open { border-color: var(--gold); color: var(--gold); }
-  footer { margin-top: 36px; text-align: center; font-size: 11px; color: var(--sub); }
+  .p.link { border-color: var(--link); color: var(--link); }
+  footer { margin-top: 36px; text-align: center; font-size: 11px; color: var(--sub); line-height: 1.8; }
 </style>
 </head>
 <body>
@@ -35,13 +40,15 @@
 
   <a class="feature" href="kagoshima/">
     <div class="no">第一弾　鹿児島県</div>
-    <div class="t">薩摩の焔</div>
-    <div class="s">〜二つの星を見た少年〜　幕末から明治。西郷隆盛と大久保利通の出会いから別れまで。</div>
-    <span class="play">遊ぶ（序章・第一章 体験版）</span>
+    <div class="t">薩摩の焔 〜二つの星を見た少年〜</div>
+    <div class="s">幕末から明治。西郷隆盛と大久保利通の出会いから別れまで。<br>全十二章＋終章、四つの結末。</div>
+    <div class="prog" id="prog"></div>
+    <span class="play">遊ぶ</span>
   </a>
+  <div class="links" id="links"></div>
 
   <div id="regions"></div>
-  <footer>スマホは縦向きがおすすめです</footer>
+  <footer>水色の県は、あなたがすでに物語の中で「つながり」を持った県です。<br>スマホは縦向き・横向きどちらでも遊べます。</footer>
 </main>
 <script>
   const REGIONS = [
@@ -55,8 +62,17 @@
     ['九州・沖縄', ['福岡県', '佐賀県', '長崎県', '熊本県', '大分県', '宮崎県', '鹿児島県', '沖縄県']],
   ];
   const OPEN = ['鹿児島県'];
+  let S = {};
+  try { S = JSON.parse(localStorage.getItem('nihonkoku-series') || '{}'); } catch (e) { }
+  const links = {};
+  for (const k in S) for (const p in (S[k].links || {})) (links[p] = links[p] || []).push(...S[k].links[p]);
+  const k = S['鹿児島県'];
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  if (k) document.getElementById('prog').textContent = (k.cleared ? `クリア済み　結末 ${k.endings.length} / 4` : `進行中：${['序章', '第一章', '第二章', '第三章', '第四章', '第五章', '第六章', '第七章', '第八章', '第九章', '第十章', '第十一章', '第十二章', '終章'][k.chapter] || ''}`) + `　出会った人物 ${k.people.length}人`;
+  const lk = Object.keys(links).filter(p => p.endsWith('都') || p.endsWith('道') || p.endsWith('府') || p.endsWith('県'));
+  if (lk.length) document.getElementById('links').innerHTML = '物語の中のつながり：<br>' + lk.map(p => `<b>${esc(p)}</b> ${links[p].slice(0, 4).map(esc).join('・')}${links[p].length > 4 ? ' ほか' : ''}`).join('<br>');
   document.getElementById('regions').innerHTML = REGIONS.map(([r, ps]) =>
-    `<h2>${r}</h2><div class="grid">${ps.map(p => `<span class="p${OPEN.includes(p) ? ' open' : ''}">${p}${OPEN.includes(p) ? '' : '　準備中'}</span>`).join('')}</div>`
+    `<h2>${r}</h2><div class="grid">${ps.map(p => `<span class="p${OPEN.includes(p) ? ' open' : links[p] ? ' link' : ''}">${p}${OPEN.includes(p) ? '' : links[p] ? '　つながりあり' : '　準備中'}</span>`).join('')}</div>`
   ).join('');
 </script>
 </body>

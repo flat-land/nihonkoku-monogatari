@@ -3,8 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover">
-<title>薩摩の焔</title>
-<meta name="description" content="幕末〜明治の鹿児島を舞台にした史実ベースのドットRPG">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#06060c">
+<title>日本國物語 薩摩の焔</title>
+<meta name="description" content="日本國物語 第一弾。幕末〜明治の鹿児島を舞台にした史実ベースのドットRPG">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap" rel="stylesheet">
@@ -12,31 +14,40 @@
 </head>
 <body>
 <div id="wrap">
+  <div id="padL" class="padside">
+    <div id="stick"><div id="stickBase"><div id="stickKnob"></div></div><span class="hint">ここを触って<br>スティック</span></div>
+  </div>
   <div id="holder">
     <div id="screen">
-      <canvas id="cv" width="384" height="288"></canvas>
+      <canvas id="cv" width="512" height="384"></canvas>
       <div id="tint"></div>
       <div id="ui"></div>
+      <canvas id="mini" width="96" height="96"></canvas>
       <div id="fade"></div>
     </div>
   </div>
   <div id="pad">
-    <div class="dpad">
-      <button data-k="up" class="u">▲</button>
-      <button data-k="left" class="l">◀</button>
-      <button data-k="right" class="r">▶</button>
-      <button data-k="down" class="d">▼</button>
-    </div>
-    <div class="ab">
-      <button data-k="cancel" class="b">戻る</button>
-      <button data-k="ok" class="a">決定</button>
+    <div class="sticky" id="stickSlot"></div>
+    <div id="btns">
+      <div class="row small">
+        <button data-k="menu">メニュー</button><button data-k="map">地図</button><button data-k="log">ログ</button><button data-k="set">設定</button>
+      </div>
+      <div class="row ab">
+        <button data-k="cancel" class="b">B<small>戻る/走る</small></button>
+        <button data-k="ok" class="a">A<small>決定</small></button>
+      </div>
+      <div class="row small">
+        <button data-k="auto">AUTO</button><button data-k="speed">×1</button>
+      </div>
     </div>
   </div>
 </div>
+<script src="src/audio.js"></script>
 <script src="src/gfx.js"></script>
 <script src="src/data.js"></script>
 <script src="src/engine.js"></script>
 <script src="src/story.js"></script>
+<script src="src/story2.js"></script>
 <script src="src/maps.js"></script>
 </body>
 </html>

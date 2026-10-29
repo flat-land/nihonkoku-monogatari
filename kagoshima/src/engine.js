@@ -1,6 +1,8 @@
 'use strict';
-// ===== ゲームの仕組み（移動・会話・メニュー・戦闘・セーブ） =====
-const SW = 384, SH = 288;
+// ===== ゲームの仕組み（操作・会話・マップ・メニュー・戦闘・合戦・図鑑・セーブ） =====
+const CW = 512, CH = 384;      // キャンバスの内部解像度
+const SW = 384, SH = 288;      // UI（文字や窓）の座標系
+const VW = CW / TS, VH = CH / TS;
 const $ = s => document.querySelector(s);
 const cv = $('#cv'), ctx = cv.getContext('2d');
 const uiRoot = $('#ui');
@@ -8,113 +10,111 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const pick = a => a[(Math.random() * a.length) | 0];
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const GAMEOVER = { gameover: true };
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
-const G = { scene: 'title', map: null, mapId: null, px: 0, py: 0, dir: 0, move: null, chain: [], party: [], mem: {}, inv: {}, money: 0, flags: {}, chapter: 0, busy: false, night: false, encSteps: 0, frame: 0, B: null };
+const G = { scene: 'title', map: null, mapId: null, px: 0, py: 0, dir: 0, move: null, chain: [], party: [], mem: {}, inv: {}, money: 0, flags: {}, chapter: 0, busy: false, night: false, encSteps: 0, frame: 0, B: null, K: null, ride: false, dex: { p: {}, e: {}, l: {}, end: {} }, log: [], parts: [], emotes: [], playTime: 0 };
 const F = k => !!G.flags[k];
 const flag = (k, v = true) => { G.flags[k] = v; };
+const pts = k => G.flags[k] || 0;
+function addPt(k, n = 1) { G.flags[k] = pts(k) + n; }
 
-// ---------- 効果音 ----------
-const SFX = {
-  ac: null,
-  unlock() { try { if (!this.ac) this.ac = new (window.AudioContext || window.webkitAudioContext)(); if (this.ac.state === 'suspended') this.ac.resume(); } catch (e) { } },
-  tone(freq, dur, type = 'square', vol = .05, when = 0, slide = 0) {
-    const c = this.ac; if (!c) return;
-    const o = c.createOscillator(), g = c.createGain(), t = c.currentTime + when;
-    o.type = type; o.frequency.setValueAtTime(freq, t); if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(30, freq + slide), t + dur);
-    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
-    o.connect(g); g.connect(c.destination); o.start(t); o.stop(t + dur + .02);
-  },
-  play(n) {
-    try {
-      if (!this.ac) return;
-      const T = (...a) => this.tone(...a);
-      ({
-        cur: () => T(880, .04, 'square', .03), ok: () => T(660, .07, 'square', .04), cancel: () => T(330, .07, 'square', .04), ng: () => T(140, .12, 'square', .05),
-        hit: () => T(220, .14, 'sawtooth', .09, 0, -160), hurt: () => T(110, .2, 'sawtooth', .1, 0, -60), kill: () => { T(300, .1, 'square', .06, 0, -200); T(150, .2, 'square', .05, .08, -100); },
-        boom: () => T(90, .5, 'sawtooth', .14, 0, -60), splash: () => T(400, .4, 'triangle', .1, 0, -350),
-        enc: () => [440, 554, 659, 880].forEach((f, i) => T(f, .08, 'square', .05, i * .05)),
-        heal: () => [523, 659, 784].forEach((f, i) => T(f, .12, 'triangle', .08, i * .08)),
-        lvup: () => [523, 659, 784, 1046].forEach((f, i) => T(f, .16, 'square', .05, i * .11)),
-        join: () => [392, 523, 659, 784, 659, 784].forEach((f, i) => T(f, .14, 'square', .045, i * .1)),
-        learn: () => [659, 784, 988].forEach((f, i) => T(f, .14, 'triangle', .08, i * .09)),
-        step: () => T(180, .05, 'triangle', .04),
-      }[n] || (() => { }))();
-    } catch (e) { }
-  },
-};
+// ---------- 設定（この端末だけに保存） ----------
+const OPT_KEY = 'nihonkoku-opt';
+const OPT = Object.assign({ lang: 'kago', text: 2, speed: 1, auto: false, bgm: .5, sfx: .8, mini: true }, (() => { try { return JSON.parse(localStorage.getItem(OPT_KEY)) || {}; } catch (e) { return {}; } })());
+function saveOpt() { try { localStorage.setItem(OPT_KEY, JSON.stringify(OPT)); } catch (e) { } Audio8.vol.bgm = OPT.bgm; Audio8.vol.sfx = OPT.sfx; Audio8.setVol(); updateHud(); }
+const T = ms => ms / OPT.speed;
+const SFX = { play: n => Audio8.sfx(n) };
+const bgm = n => Audio8.play(n);
 
-// ---------- 入力 ----------
-const KEYMAP = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', w: 'up', s: 'down', a: 'left', d: 'right', z: 'ok', Enter: 'ok', ' ': 'ok', x: 'cancel', Escape: 'cancel', Backspace: 'cancel', Shift: 'run' };
+// ---------- 入力（キーボード・仮想パッド・タップ） ----------
+const KEYMAP = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', w: 'up', s: 'down', a: 'left', d: 'right', z: 'ok', Enter: 'ok', ' ': 'ok', x: 'cancel', Escape: 'cancel', Backspace: 'cancel', Shift: 'run', c: 'menu', m: 'map', l: 'log', p: 'set', f: 'speed', g: 'auto' };
 const DIRK = ['up', 'down', 'left', 'right'];
 const Input = {
-  q: [], held: {}, dirs: [],
-  down(k) { if (DIRK.includes(k) && !this.dirs.includes(k)) this.dirs.push(k); this.held[k] = true; if (k !== 'run') this.q.push(k); },
+  q: [], held: {}, dirs: [], rep: 0,
+  down(k) { if (DIRK.includes(k) && !this.dirs.includes(k)) this.dirs.push(k); this.held[k] = true; if (k !== 'run') this.q.push(k); this.rep = G.frame + 18; },
   up(k) { this.held[k] = false; this.dirs = this.dirs.filter(d => d !== k); },
+  setStick(k) { for (const d of DIRK) if (d !== k && this.dirs.includes(d)) this.up(d); if (k && !this.dirs.includes(k)) this.down(k); },
   dir() { const k = this.dirs[this.dirs.length - 1]; return k ? { down: 0, left: 1, right: 2, up: 3 }[k] : -1; },
 };
 const keyOf = e => KEYMAP[e.key] || KEYMAP[e.key.length === 1 ? e.key.toLowerCase() : ''];
-addEventListener('keydown', e => { const k = keyOf(e); if (!k) return; e.preventDefault(); SFX.unlock(); if (e.repeat) { if (DIRK.includes(k)) Input.q.push(k); return; } Input.down(k); });
+addEventListener('keydown', e => { const k = keyOf(e); if (!k) return; e.preventDefault(); Audio8.unlock(); if (e.repeat) { if (DIRK.includes(k)) Input.q.push(k); return; } Input.down(k); });
 addEventListener('keyup', e => { const k = keyOf(e); if (k) Input.up(k); });
 addEventListener('blur', () => { Input.held = {}; Input.dirs = []; });
-document.querySelectorAll('#pad [data-k]').forEach(b => {
+for (const ev of ['touchend', 'pointerdown', 'keydown', 'click']) addEventListener(ev, () => Audio8.unlock(), { passive: true });
+document.querySelectorAll('[data-k]').forEach(b => {
   const k = b.dataset.k;
-  b.addEventListener('pointerdown', e => { e.preventDefault(); SFX.unlock(); Input.down(k); b.classList.add('on'); });
+  b.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); Audio8.unlock(); Input.down(k); b.classList.add('on'); });
   for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) b.addEventListener(ev, () => { Input.up(k); b.classList.remove('on'); });
 });
+// ぷにコン：左側を触ったところに出てくるスティック
+(() => {
+  const zone = $('#stick'), base = $('#stickBase'), knob = $('#stickKnob'); if (!zone) return;
+  let id = null, ox = 0, oy = 0;
+  zone.addEventListener('pointerdown', e => { e.preventDefault(); Audio8.unlock(); id = e.pointerId; zone.setPointerCapture(id); const r = zone.getBoundingClientRect(); ox = e.clientX - r.left; oy = e.clientY - r.top; base.style.left = ox + 'px'; base.style.top = oy + 'px'; base.classList.add('on'); knob.style.transform = 'translate(-50%,-50%)'; });
+  zone.addEventListener('pointermove', e => {
+    if (e.pointerId !== id) return; const r = zone.getBoundingClientRect(); const dx = e.clientX - r.left - ox, dy = e.clientY - r.top - oy, dist = Math.hypot(dx, dy), m = Math.min(dist, 44);
+    knob.style.transform = `translate(calc(-50% + ${dist ? dx / dist * m : 0}px), calc(-50% + ${dist ? dy / dist * m : 0}px))`;
+    Input.setStick(dist < 14 ? null : Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up'));
+  });
+  const end = e => { if (e.pointerId !== id) return; id = null; base.classList.remove('on'); Input.setStick(null); };
+  zone.addEventListener('pointerup', end); zone.addEventListener('pointercancel', end);
+})();
+$('#screen').addEventListener('pointerdown', e => { Audio8.unlock(); const h = UI.top(); if (h && h.tap) { e.preventDefault(); Input.q.push('ok'); } });
 
 // ---------- UI部品 ----------
 const UI = { stack: [], push(h) { this.stack.push(h); }, pop(h) { const i = this.stack.lastIndexOf(h); if (i >= 0) this.stack.splice(i, 1); }, top() { return this.stack[this.stack.length - 1]; } };
 function el(tag, cls, parent = uiRoot) { const e = document.createElement(tag); if (cls) e.className = cls; parent.appendChild(e); return e; }
 function place(e, x, y, w, h) { e.style.left = x + 'px'; e.style.top = y + 'px'; if (w) e.style.width = w + 'px'; if (h) e.style.height = h + 'px'; return e; }
-function waitOk(ms) {
+function waitOk(ms, tap = true) {
   return new Promise(res => {
     let done = false, t = null;
     const fin = () => { if (done) return; done = true; UI.pop(h); clearTimeout(t); res(); };
-    const h = { onKey(k) { if (k === 'ok' || k === 'cancel') fin(); } };
+    const h = { tap, onKey(k) { if (k === 'ok' || k === 'cancel') fin(); } };
     UI.push(h); if (ms) t = setTimeout(fin, ms);
   });
 }
+function toast(text) { const t = el('div', 'toast'); t.textContent = text; setTimeout(() => t.classList.add('out'), 1600); setTimeout(() => t.remove(), 2300); }
 
-const DLG = { el: null, hideT: null };
+// 会話。who=人物ID, text=鹿児島弁などの元のセリフ, std=標準語訳
+const DLG = { el: null, sub: null, hideT: null };
 function infoOf(who) {
   if (!who) return null;
   if (typeof who === 'object') return who;
   const p = PEOPLE[who]; if (!p) return { name: who };
-  return { name: (G.mem[who] && G.mem[who].name) || p.name, por: typeof p.por === 'function' ? p.por() : p.por };
+  return { name: (G.mem[who] && G.mem[who].name) || (typeof p.name === 'function' ? p.name() : p.name), por: typeof p.por === 'function' ? p.por() : p.por };
 }
-function say(who, text) {
+function say(who, text, std) {
   if (!DLG.el) {
-    DLG.el = place(el('div', 'win dlg'), 8, 190, 368, 92);
-    DLG.el.innerHTML = '<canvas class="por" width="32" height="32"></canvas><div class="nm"></div><div class="tx"></div><div class="arw">▼</div>';
+    DLG.el = place(el('div', 'win dlg'), 6, 192, 372, 90);
+    DLG.el.innerHTML = '<canvas class="por" width="64" height="64"></canvas><div class="nm"></div><div class="tx"></div><div class="arw">▼</div>';
+    DLG.sub = place(el('div', 'win sub'), 6, 150, 372); DLG.sub.style.display = 'none';
   }
   clearTimeout(DLG.hideT);
+  if (who && typeof who === 'string') meet(who);
   const d = DLG.el, info = infoOf(who), por = d.querySelector('.por'), nm = d.querySelector('.nm'), tx = d.querySelector('.tx'), arw = d.querySelector('.arw');
-  d.style.display = 'block';
-  d.classList.toggle('narr', !info);
-  d.classList.toggle('hasp', !!(info && info.por));
-  if (info && info.por) { const pc = por.getContext('2d'); pc.clearRect(0, 0, 32, 32); pc.drawImage(portraitImg(info.por), 0, 0); }
+  let shown = text, sub = null;
+  if (std && OPT.lang === 'std') shown = std;
+  if (std && OPT.lang === 'both') sub = std;
+  d.style.display = 'block'; d.classList.toggle('narr', !info); d.classList.toggle('hasp', !!(info && info.por));
+  if (info && info.por) { const pc = por.getContext('2d'); pc.clearRect(0, 0, 64, 64); pc.drawImage(portraitImg(info.por), 0, 0); }
   nm.textContent = info ? info.name : '';
+  DLG.sub.style.display = sub ? 'block' : 'none'; if (sub) DLG.sub.textContent = '訳）' + sub.replace(/\n/g, '');
+  G.log.push({ n: info ? info.name : '', t: shown }); if (G.log.length > 300) G.log.shift();
   return new Promise(res => {
-    let i = 0, done = false;
+    let i = 0, done = false, autoT = null;
     arw.style.visibility = 'hidden';
-    const finish = () => { clearInterval(tm); tx.textContent = text; done = true; arw.style.visibility = 'visible'; };
-    const tm = setInterval(() => { i += 1; tx.textContent = text.slice(0, i); if (i >= text.length) finish(); }, 26);
-    const h = {
-      onKey(k) {
-        if (k !== 'ok' && k !== 'cancel') return;
-        if (!done) { finish(); return; }
-        UI.pop(h); SFX.play('cur');
-        DLG.hideT = setTimeout(hideDlg, 60);
-        res();
-      }
-    };
+    const per = [60, 34, 18, 6][OPT.text] / OPT.speed;
+    const finish = () => { clearInterval(tm); tx.textContent = shown; done = true; arw.style.visibility = 'visible'; if (OPT.auto) autoT = setTimeout(close, T(900 + shown.length * 45)); };
+    const tm = setInterval(() => { i += Math.max(1, Math.round(16 / Math.max(per, 4))); tx.textContent = shown.slice(0, i); if (i >= shown.length) finish(); }, Math.max(per, 4));
+    const close = () => { clearTimeout(autoT); UI.pop(h); SFX.play('cur'); DLG.hideT = setTimeout(hideDlg, 70); res(); };
+    const h = { tap: true, onKey(k) { if (k !== 'ok' && k !== 'cancel') return; if (!done) { finish(); return; } close(); } };
     UI.push(h);
   });
 }
-function hideDlg() { if (DLG.el) DLG.el.style.display = 'none'; }
+function hideDlg() { if (DLG.el) { DLG.el.style.display = 'none'; DLG.sub.style.display = 'none'; } }
 function keepDlg() { clearTimeout(DLG.hideT); }
 const N = t => say(null, t);
-const S = (who, t) => say(who, t);
+const S = (who, t, std) => say(who, t, std);
 
 function choose(items, o = {}) {
   return new Promise(res => {
@@ -126,7 +126,7 @@ function choose(items, o = {}) {
       const r = el('div', 'it', box); const lab = typeof it === 'string' ? it : it.label;
       r.innerHTML = `<span>${esc(lab)}</span>` + (it.right != null ? `<span class="rt">${esc(it.right)}</span>` : '');
       if (it.disabled) r.classList.add('dis');
-      r.addEventListener('click', () => { if (UI.top() !== h) return; idx = i; upd(); choosePick(); });
+      r.addEventListener('pointerdown', e => { e.stopPropagation(); if (UI.top() !== h) return; if (idx === i) choosePick(); else { idx = i; upd(); SFX.play('cur'); } });
       return r;
     });
     const upd = () => { rows.forEach((r, i) => r.classList.toggle('sel', i === idx)); if (rows[idx]) rows[idx].scrollIntoView({ block: 'nearest' }); if (o.onMove) o.onMove(idx); };
@@ -137,6 +137,7 @@ function choose(items, o = {}) {
         if (!items.length) { if (k === 'ok' || k === 'cancel') close(-1); return; }
         if (k === 'up') { idx = (idx - 1 + items.length) % items.length; SFX.play('cur'); upd(); }
         else if (k === 'down') { idx = (idx + 1) % items.length; SFX.play('cur'); upd(); }
+        else if ((k === 'left' || k === 'right') && o.onSide) { o.onSide(idx, k === 'left' ? -1 : 1); }
         else if (k === 'ok') choosePick();
         else if (k === 'cancel' && o.cancel !== false) { SFX.play('cancel'); close(-1); }
       }
@@ -144,50 +145,99 @@ function choose(items, o = {}) {
     UI.push(h); upd();
   });
 }
-async function ask(who, text) {
-  await say(who, text); keepDlg();
-  const r = await choose(['はい', 'いいえ'], { x: 300, y: 128, w: 76 });
+async function ask(who, text, std) {
+  await say(who, text, std); keepDlg();
+  const r = await choose(['はい', 'いいえ'], { x: 300, y: 130, w: 76 });
   hideDlg(); return r === 0;
 }
-function panel(html, x, y, w, h) { const e = place(el('div', 'win'), x, y, w, h); e.innerHTML = html; return e; }
+// 選択肢つきの問い（選択肢は {label, ...}）
+async function pickOne(who, text, std, opts, o = {}) {
+  if (text) { await say(who, text, std); keepDlg(); }
+  const r = await choose(opts, { x: o.x ?? 150, y: o.y ?? 110, w: o.w ?? 226, cancel: false });
+  hideDlg(); return r;
+}
+function panel(html, x, y, w, h, cls = '') { const e = place(el('div', 'win ' + cls), x, y, w, h); e.innerHTML = html; return e; }
+// 数量を選ぶ（左右で±10、上下で±1）
+function qty(max, unit, label) {
+  return new Promise(res => {
+    let n = 1; const b = place(el('div', 'win qty'), 160, 120, 210);
+    const upd = () => { b.innerHTML = `<div class="ttl">${esc(label)}</div><div class="q">◀ ${n} ▶</div><div class="rt">${unit(n)}</div><small>上下で±1　左右で±10</small>`; };
+    const h = { onKey(k) { if (k === 'up' || k === 'right') n = Math.min(max, n + (k === 'right' ? 10 : 1)); if (k === 'down' || k === 'left') n = Math.max(1, n - (k === 'left' ? 10 : 1)); if (k === 'ok') { UI.pop(h); b.remove(); SFX.play('ok'); res(n); return; } if (k === 'cancel') { UI.pop(h); b.remove(); SFX.play('cancel'); res(0); return; } SFX.play('cur'); upd(); } };
+    UI.push(h); upd();
+  });
+}
 
 const fadeEl = $('#fade'), tintEl = $('#tint'), screenEl = $('#screen');
-async function fadeOut() { fadeEl.style.opacity = 1; await sleep(450); }
-async function fadeIn() { fadeEl.style.opacity = 0; await sleep(450); }
-function shake() { screenEl.classList.remove('shake'); void screenEl.offsetWidth; screenEl.classList.add('shake'); }
-function flashScreen() { screenEl.classList.remove('flash'); void screenEl.offsetWidth; screenEl.classList.add('flash'); }
-async function card(title, sub) {
+async function fadeOut(ms = 450) { fadeEl.style.transition = `opacity ${ms}ms`; fadeEl.style.opacity = 1; await sleep(ms); }
+async function fadeIn(ms = 450) { fadeEl.style.transition = `opacity ${ms}ms`; fadeEl.style.opacity = 0; await sleep(ms); }
+function shake(big) { screenEl.classList.remove('shake', 'shake2'); void screenEl.offsetWidth; screenEl.classList.add(big ? 'shake2' : 'shake'); }
+function flashScreen(col = '#fff') { screenEl.style.setProperty('--flash', col); screenEl.classList.remove('flash'); void screenEl.offsetWidth; screenEl.classList.add('flash'); }
+async function card(title, sub, ms = 4200) {
   const c = el('div', 'card'); c.innerHTML = `<div class="ct">${esc(title)}</div><div class="cs">${esc(sub || '').replace(/\n/g, '<br>')}</div>`;
-  await sleep(30); c.classList.add('on'); await sleep(700); await waitOk(4000); c.classList.remove('on'); await sleep(500); c.remove();
+  await sleep(30); c.classList.add('on'); await sleep(800); await waitOk(ms); c.classList.remove('on'); await sleep(600); c.remove();
+}
+// 一枚絵（文字が中央に浮かぶ演出）
+async function still(lines, bgType) {
+  const c = el('div', 'still'); if (bgType) { const cv2 = document.createElement('canvas'); cv2.width = 512; cv2.height = 384; cv2.getContext('2d').drawImage(bgImg(bgType), 0, 0); c.appendChild(cv2); }
+  const t = el('div', 'st-t', c); await sleep(30); c.classList.add('on');
+  for (const l of lines) { t.textContent = ''; t.classList.remove('in'); void t.offsetWidth; t.textContent = l; t.classList.add('in'); G.log.push({ n: '', t: l }); await sleep(600); await waitOk(OPT.auto ? T(3800) : 0); }
+  c.classList.remove('on'); await sleep(700); c.remove();
 }
 function banner(text) { const b = place(el('div', 'win banner'), 8, 8); b.textContent = text; setTimeout(() => b.classList.add('out'), 1800); setTimeout(() => b.remove(), 2600); }
+function setWeather(w) { G.weather = w; G.parts = G.parts.filter(p => p.kind === 'fire'); }
+function emote(target, ch = '！') { G.emotes.push({ target, ch, t: 0 }); SFX.play(ch === '♪' ? 'learn' : 'cur'); }
 
 // ---------- 仲間・能力値 ----------
 function needExp(lv) { return 8 * lv + 5 * lv * lv; }
 function expAt(lv) { let s = 0; for (let l = 1; l < lv; l++) s += needExp(l); return s; }
 function stat(m, k) { const h = HEROES[m.id]; let v = h.base[k] + h.grow[k] * (m.lv - 1); for (const s in m.eq) { const it = ITEMS[m.eq[s]]; if (it && it[k]) v += it[k]; } return Math.floor(v); }
 const mhp = m => stat(m, 'hp'), mki = m => stat(m, 'ki');
-function skillsOf(m) { return HEROES[m.id].skills.filter(([, lv, f]) => m.lv >= lv && (!f || F(f))).map(s => s[0]); }
-function mkMember(id, lv = 1) { const m = { id, name: PEOPLE[id].name, lv, exp: expAt(lv), eq: { ...HEROES[id].start }, hp: 0, ki: 0 }; m.hp = mhp(m); m.ki = mki(m); return m; }
+function skillsOf(m) { return HEROES[m.id].skills.filter(([sid, lv, f]) => m.lv >= lv && (!f || F(f))).map(s => s[0]).filter(s => !SKILLS[s].need || G.party.includes(SKILLS[s].need)); }
+function nameOf(id) { const n = PEOPLE[id].name; return typeof n === 'function' ? n() : n; }
+function mkMember(id, lv = 1) { const m = { id, name: nameOf(id), lv, exp: expAt(lv), eq: { ...HEROES[id].start }, hp: 0, ki: 0 }; m.hp = mhp(m); m.ki = mki(m); return m; }
 function restAll() { for (const id of G.party) { const m = G.mem[id]; m.hp = mhp(m); m.ki = mki(m); } }
 function rebuildChain() { G.chain = G.party.slice(1).map(() => ({ x: G.px, y: G.py, ox: G.px, oy: G.py, dir: G.dir })); }
-async function join(id, lv) {
+function partyLv() { return Math.round(G.party.reduce((s, id) => s + G.mem[id].lv, 0) / G.party.length); }
+async function join(id, lv, quiet) {
   if (!G.mem[id]) G.mem[id] = mkMember(id, lv || 1);
   else if (lv && G.mem[id].lv < lv) { const m = G.mem[id]; m.lv = lv; m.exp = expAt(lv); }
   const m = G.mem[id]; m.hp = mhp(m); m.ki = mki(m);
-  if (!G.party.includes(id)) G.party.push(id);
-  flag(id); rebuildChain(); SFX.play('join');
-  await N(`${m.name}が 仲間に加わった！`);
+  if (!G.party.includes(id)) { if (G.party.length >= 4) G.party.splice(3, 0, id); else G.party.push(id); }
+  flag('in_' + id); flag(id); rebuildChain(); meet(id);
+  if (!quiet) { SFX.play('join'); await N(`${m.name}が 仲間に加わった！`); }
 }
-async function leave(id) {
-  const m = G.mem[id]; G.party = G.party.filter(p => p !== id);
+async function leave(id, why) {
+  const m = G.mem[id]; if (!m || !G.party.includes(id)) return;
+  G.party = G.party.filter(p => p !== id); flag('in_' + id, false);
   for (const s of ['a', 'h', 'x']) if (m.eq[s] && !HEROES[id].start[s]) { addItem(m.eq[s]); delete m.eq[s]; }
   rebuildChain();
-  await N(`${m.name}が 一行を離れた。`);
+  await N(why || `${m.name}が 一行を離れた。`);
 }
 function addItem(id, n = 1) { G.inv[id] = (G.inv[id] || 0) + n; if (G.inv[id] <= 0) delete G.inv[id]; }
-async function give(id, n = 1) { addItem(id, n); SFX.play('learn'); await N(`${ITEMS[id].name}を 手に入れた！`); }
-async function getMoney(n) { G.money += n; SFX.play('learn'); await N(`${n}文を 受け取った！`); }
+async function give(id, n = 1) { addItem(id, n); SFX.play('item'); await N(`${ITEMS[id].name}${n > 1 ? '×' + n : ''}を 手に入れた！`); }
+async function getMoney(n) { G.money += n; SFX.play('coin'); await N(`${n}文を 受け取った！`); }
+const hasItem = id => (G.inv[id] || 0) > 0;
+
+// ---------- 図鑑・シリーズの記録 ----------
+function meet(id) { if (DEX.people[id] && !G.dex.p[id]) { G.dex.p[id] = 1; toast(`人物図鑑：${DEX.people[id].name}`); seriesUpdate(); } }
+function chron(id) { if (!G.dex.e[id]) { G.dex.e[id] = 1; const e = DEX.events.find(e => e.id === id); if (e) toast(`年表：${e.title}`); seriesUpdate(); } }
+function visit(id) { if (id && DEX.places[id] && !G.dex.l[id]) { G.dex.l[id] = 1; toast(`ゆかりの地：${DEX.places[id].name}`); seriesUpdate(); } }
+function linkedPrefs() {
+  const out = {};
+  const add = (pref, what) => { if (!pref || pref === '鹿児島県') return; (out[pref] = out[pref] || []).push(what); };
+  for (const id in G.dex.p) add(DEX.people[id].pref, DEX.people[id].name);
+  for (const e of DEX.events) if (G.dex.e[e.id]) add(e.pref, e.title);
+  for (const id in G.dex.l) add(DEX.places[id].pref, DEX.places[id].name);
+  return out;
+}
+const SERIES_KEY = 'nihonkoku-series';
+function seriesUpdate() {
+  try {
+    const s = JSON.parse(localStorage.getItem(SERIES_KEY) || '{}');
+    s['鹿児島県'] = { title: '薩摩の焔', chapter: G.chapter, cleared: F('cleared'), endings: Object.keys(G.dex.end), people: Object.keys(G.dex.p).map(id => DEX.people[id].name), links: linkedPrefs(), t: Date.now() };
+    localStorage.setItem(SERIES_KEY, JSON.stringify(s));
+  } catch (e) { }
+}
 
 // ---------- マップ ----------
 const DIRS = [[0, 1], [-1, 0], [1, 0], [0, -1]];
@@ -195,18 +245,30 @@ function dirOf(dx, dy) { return dy > 0 ? 0 : dx < 0 ? 1 : dx > 0 ? 2 : 3; }
 function tileAt(x, y) { const m = G.map; if (x < 0 || y < 0 || x >= m.w || y >= m.h) return 'x'; return m.g[y][x]; }
 function npcs() { return G.map.npcs.filter(n => !n.cond || n.cond()); }
 function npcAt(x, y) { return npcs().find(n => n.x === x && n.y === y); }
-function passable(x, y) { return !SOLID.has(tileAt(x, y)) && !npcAt(x, y); }
+function passable(x, y) { const t = tileAt(x, y); if (SOLID.has(t)) return false; if (t === 'D' && !houseAt(x, y)) return false; return !npcAt(x, y); }
+function houseAt(x, y) { return (G.map.houses || []).find(h => h.x === x && h.y === y); }
+function buildMap(id) {
+  const def = MAPS[id] || ROOMS[id];
+  const m = def.build(); m.h = m.g.length; m.w = m.g[0].length; m.id = id;
+  m.npcs = (m.npcs || []).map(n => ({ ...n, dir0: n.dir || 0, dir: n.dir || 0 })); m.warps = m.warps || []; m.triggers = m.triggers || [];
+  m.mini = null; return m;
+}
 function enterMap(id, x, y, dir = 0) {
-  const m = MAPS[id].build(); m.h = m.g.length; m.w = m.g[0].length; m.id = id;
-  m.npcs = m.npcs || []; m.warps = m.warps || []; m.triggers = m.triggers || [];
+  const m = buildMap(id);
   G.map = m; G.mapId = id; G.px = x; G.py = y; G.dir = dir; G.move = null; G.encSteps = 0;
   G.night = !!(m.night && m.night()); G.scene = 'map';
-  rebuildChain(); banner(m.name);
+  for (const id in G.mem) G.mem[id].name = nameOf(id);
+  if (m.noRide && G.ride) { G.ride = false; toast('馬を 降りた'); }
+  setWeather(m.weather ? m.weather() : null);
+  rebuildChain(); banner(m.name); visit(m.place);
+  if (m.bgm) bgm(typeof m.bgm === 'function' ? m.bgm() : m.bgm);
 }
+function refreshMap() { const keep = { x: G.px, y: G.py, d: G.dir, chain: G.chain }; const m = buildMap(G.mapId); G.map = m; G.night = !!(m.night && m.night()); G.chain = keep.chain; }
 async function warp(w) {
-  await fadeOut(); enterMap(w.to, w.x2, w.y2, w.dir ?? G.dir); await fadeIn();
+  SFX.play('door'); await fadeOut(300); enterMap(w.to, w.x2, w.y2, w.dir ?? G.dir); await fadeIn(300);
   if (G.map.onEnter) await G.map.onEnter();
 }
+async function warpTo(id, x, y, dir) { await fadeOut(); enterMap(id, x, y, dir); await fadeIn(); }
 async function run(fn) {
   if (G.busy) return; G.busy = true;
   try { await fn(); }
@@ -215,81 +277,275 @@ async function run(fn) {
 }
 function onStep() {
   const m = G.map;
-  const w = m.warps.find(w => w.x === G.px && w.y === G.py);
+  const hs = houseAt(G.px, G.py);
+  if (hs) { run(() => enterHouse(hs)); return; }
+  const w = m.warps.find(w => w.x === G.px && w.y === G.py && (!w.cond || w.cond()));
   if (w) { run(() => warp(w)); return; }
   const tr = m.triggers.find(t => G.px >= t.x && G.px < t.x + (t.w || 1) && G.py >= t.y && G.py < t.y + (t.h || 1) && (!t.cond || t.cond()));
   if (tr) { run(tr.run); return; }
   const tbl = m.enc && m.enc();
   if (tbl && (m.encTiles || ['.']).includes(tileAt(G.px, G.py))) {
     G.encSteps++;
-    if (G.encSteps > 5 && Math.random() < 1 / 14) { G.encSteps = 0; run(() => battle(pick(tbl), { bg: m.bbg || 'field' })); }
+    if (G.encSteps > 6 && Math.random() < (G.ride ? 1 / 40 : 1 / 16)) {
+      G.encSteps = 0;
+      let g = pick(tbl);
+      for (const rr of (m.rare || [])) if (Math.random() < rr.p) g = rr.g;
+      run(() => battle(g, { bg: m.bbg || 'field' }));
+    }
   }
 }
 function mapUpdate() {
+  for (const n of G.map.npcs) if (n.mv) { n.mv.t += n.mv.spd; if (n.mv.t >= 1) { const r = n.mv.res; n.mv = null; r(); } }
   if (G.move) {
     G.move.t += G.move.spd;
-    if (G.move.t >= 1) { G.move = null; for (const f of G.chain) { f.ox = f.x; f.oy = f.y; } onStep(); }
+    if (G.move.t >= 1) { G.move = null; for (const f of G.chain) { f.ox = f.x; f.oy = f.y; } if (G.autoWalk) { const r = G.autoWalk; G.autoWalk = null; r(); } else onStep(); }
     return;
   }
   if (G.busy || UI.top()) return;
   const d = Input.dir(); if (d < 0) return;
+  stepPlayer(d);
+}
+function stepPlayer(d, forced) {
   G.dir = d; const nx = G.px + DIRS[d][0], ny = G.py + DIRS[d][1];
-  if (!passable(nx, ny)) return;
+  if (!forced && !passable(nx, ny)) return false;
   let prev = { x: G.px, y: G.py };
   for (const f of G.chain) { const old = { x: f.x, y: f.y }; f.ox = f.x; f.oy = f.y; if (prev.x !== f.x || prev.y !== f.y) f.dir = dirOf(prev.x - f.x, prev.y - f.y); f.x = prev.x; f.y = prev.y; prev = old; }
-  G.move = { fx: G.px, fy: G.py, t: 0, spd: Input.held.run ? .25 : .125 };
+  const fast = G.ride ? .3 : (Input.held.run || Input.held.cancel) ? .2 : .1;
+  G.move = { fx: G.px, fy: G.py, t: 0, spd: forced ? .1 : fast };
   G.px = nx; G.py = ny;
+  if (G.ride && G.frame % 2 === 0) SFX.play('step');
+  return true;
 }
+// 演出用：プレイヤー／人物を歩かせる
+async function walk(dirs) { for (const d of dirs) { await new Promise(r => { G.autoWalk = r; stepPlayer(d, true); }); } }
+function findNpc(spr) { return G.map.npcs.find(n => n.spr === spr && (!n.cond || n.cond())); }
+async function walkNpc(spr, dirs, spd = .1) {
+  const n = typeof spr === 'string' ? findNpc(spr) : spr; if (!n) return;
+  for (const d of dirs) { n.dir = d; n.ox = n.x; n.oy = n.y; n.x += DIRS[d][0]; n.y += DIRS[d][1]; await new Promise(r => n.mv = { t: 0, spd, res: r }); n.ox = n.x; n.oy = n.y; }
+}
+function face(spr, d) { const n = findNpc(spr); if (n) n.dir = d; }
 function mapKey(k) {
+  if (k === 'menu') { run(openMenu); return; }
+  if (k === 'map') { run(showFullMap); return; }
   if (G.move) return;
   if (k === 'ok') {
     const fx = G.px + DIRS[G.dir][0], fy = G.py + DIRS[G.dir][1];
     const n = npcAt(fx, fy);
-    if (n) { if (n.spr !== 'pot' && n.spr !== 'boat') n.dir = 3 - G.dir; run(n.pot ? () => openPot(n) : n.talk); return; }
-    if (tileAt(fx, fy) === 'D') run(() => N('戸は閉まっている。'));
-  } else if (k === 'cancel') run(openMenu);
+    if (n) {
+      run(async () => {
+        if (!['pot', 'chest', 'boat', 'sign', 'horse'].includes(n.spr)) n.dir = 3 - G.dir;
+        if (n.pot) await openPot(n); else if (n.talk) await n.talk(n);
+        if (!n.keepDir) n.dir = n.dir0;
+      });
+      return;
+    }
+    const t = tileAt(fx, fy);
+    if (t === 'L') run(() => openLock(fx, fy));
+    else if (t === 'D') run(() => N('戸は 固く閉ざされている。'));
+    else if (G.map.look && G.map.look[fx + ',' + fy]) run(G.map.look[fx + ',' + fy]);
+  }
 }
 async function openPot(n) {
   const k = 'pot_' + n.pot;
-  if (F(k)) { await N('黒薩摩の甕は 空っぽだ。'); return; }
-  flag(k); await N('黒薩摩の甕を のぞきこんだ……'); await give(n.item);
+  if (F(k)) { await N(n.spr === 'chest' ? '葛籠は 空っぽだ。' : '黒薩摩の甕は 空っぽだ。'); return; }
+  flag(k); await N(n.spr === 'chest' ? '葛籠（つづら）を開けた……' : '黒薩摩の甕を のぞきこんだ……');
+  if (n.money) await getMoney(n.money); else await give(n.item, n.n || 1);
 }
+async function openLock(x, y) {
+  const lk = (G.map.locks || []).find(l => l.x === x && l.y === y);
+  if (!lk) { await N('錠がかかっている。'); return; }
+  if (F(lk.flag)) return;
+  if (!hasItem(lk.key)) { await N(`重い錠がかかっている。\n「${ITEMS[lk.key].name}」が要りそうだ。`); return; }
+  SFX.play('door'); flag(lk.flag); await N(`${ITEMS[lk.key].name}で 錠を開けた！`); refreshMap();
+}
+// 家の中（どの家にも入れる。中の作りは自動生成）
+async function enterHouse(h) {
+  SFX.play('door'); await fadeOut(250);
+  ROOMS['_room'] = { build: () => makeRoom(h) };
+  G.ret = { map: G.mapId, x: h.x, y: h.y + 1, ride: G.ride };
+  enterMap('_room', h.w ? Math.floor(h.w / 2) : 5, (h.h || 8) - 2, 3);
+  await fadeIn(250);
+  if (h.onEnter) await h.onEnter();
+}
+function makeRoom(h) {
+  const W = h.w || 11, H = h.h || 8, g = Array.from({ length: H }, () => Array(W).fill(h.floor || 't'));
+  for (let i = 0; i < W; i++) { g[0][i] = 'V'; g[1][i] = 'v'; }
+  for (let j = 0; j < H; j++) { g[j][0] = 'V'; g[j][W - 1] = 'V'; }
+  for (let i = 0; i < W; i++) g[H - 1][i] = 'V';
+  const ex = Math.floor(W / 2); g[H - 1][ex] = 'e'; g[H - 2][ex] = 'w';
+  if (h.kind !== 'shop' && h.kind !== 'kura') { g[3][Math.floor(W / 2)] = 'I'; }
+  if (h.kind === 'kura') for (let j = 2; j < H - 1; j++) for (let i = 1; i < W - 1; i++) g[j][i] = 'w';
+  g[1][2] = 'k'; if (W > 8) g[1][W - 3] = 'z';
+  if (h.kind === 'shop') for (let i = 2; i < W - 2; i++) g[3][i] = 'k';
+  return {
+    name: h.name || '民家', g, bgm: h.bgm || (G.map && G.map.bgm) || 'town', noRide: true, place: h.place,
+    warps: [{ x: ex, y: H - 1, to: G.ret.map, x2: G.ret.x, y2: G.ret.y, dir: 0 }],
+    npcs: (h.npcs || []).concat((h.items || []).map(it => ({ spr: it.chest ? 'chest' : 'pot', pot: h.id + '_' + it.x + '_' + it.y, ...it }))),
+    night: () => G.night, look: h.look,
+  };
+}
+const ROOMS = {};
 
 // ---------- 描画 ----------
-function drawMap() {
+function cam() {
   const m = G.map, t = G.move ? G.move.t : 1;
   const ppx = (G.move ? G.move.fx + (G.px - G.move.fx) * t : G.px) * TS, ppy = (G.move ? G.move.fy + (G.py - G.move.fy) * t : G.py) * TS;
   const mw = m.w * TS, mh = m.h * TS;
-  const cx = Math.round(mw <= SW ? (mw - SW) / 2 : Math.max(0, Math.min(mw - SW, ppx - SW / 2 + 8)));
-  const cy = Math.round(mh <= SH ? (mh - SH) / 2 : Math.max(0, Math.min(mh - SH, ppy - SH / 2 + 8)));
-  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, SW, SH);
-  const af = (G.frame >> 5) & 1;
-  for (let y = Math.floor(cy / TS); y <= Math.floor((cy + SH) / TS); y++) for (let x = Math.floor(cx / TS); x <= Math.floor((cx + SW) / TS); x++) {
+  return { ppx, ppy, t, cx: Math.round(mw <= CW ? (mw - CW) / 2 : clamp(ppx - CW / 2 + 16, 0, mw - CW)), cy: Math.round(mh <= CH ? (mh - CH) / 2 : clamp(ppy - CH / 2 + 16, 0, mh - CH)) };
+}
+function drawMap() {
+  const m = G.map, { ppx, ppy, t, cx, cy } = cam();
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, CW, CH);
+  const af = (G.frame >> 4) & 3, fires = [];
+  for (let y = Math.floor(cy / TS); y <= Math.floor((cy + CH) / TS); y++) for (let x = Math.floor(cx / TS); x <= Math.floor((cx + CW) / TS); x++) {
     if (x < 0 || y < 0 || x >= m.w || y >= m.h) continue;
     const ch = m.g[y][x];
-    ctx.drawImage(tileImg(ch, ANIM.has(ch) ? af : 0, (x * 7 + y * 13) % 4), x * TS - cx, y * TS - cy);
+    ctx.drawImage(tileImg(ch, ANIM.has(ch) ? (ch === '~' || ch === 'o' ? af : af & 1) : 0, (x * 7 + y * 13) % 5 === 0 ? 1 : (x * 3 + y * 5) % 7 === 0 ? 2 : 0), x * TS - cx, y * TS - cy);
+    if (ch === 'f') fires.push([x * TS - cx, y * TS - cy]);
+    if (ch === 'f' && Math.random() < .35) G.parts.push({ kind: 'fire', x: x * TS + 4 + Math.random() * 24, y: y * TS + 26, vx: (Math.random() - .5) * .3, vy: -.6 - Math.random() * .8, life: 30 + Math.random() * 25, t: 0 });
+    if (ch === 'f' && Math.random() < .04) G.parts.push({ kind: 'smoke', x: x * TS + 16, y: y * TS + 4, vx: .2 + Math.random() * .3, vy: -.4, life: 120, t: 0 });
+    if (ch === 'O' && Math.random() < .03) G.parts.push({ kind: 'steam', x: x * TS + 8 + Math.random() * 16, y: y * TS + 10, vx: .1, vy: -.3, life: 90, t: 0 });
   }
-  const wf = (G.frame >> 4) & 1, list = [];
-  for (const n of npcs()) list.push({ x: n.x * TS, y: n.y * TS, img: charImg(n.spr, n.dir || 0, n.spr === 'pot' ? 0 : wf) });
-  G.chain.forEach((f, i) => list.push({ x: (f.ox + (f.x - f.ox) * t) * TS, y: (f.oy + (f.y - f.oy) * t) * TS - .1, img: charImg(G.party[i + 1], f.dir, wf) }));
-  list.push({ x: ppx, y: ppy, img: charImg(G.party[0], G.dir, wf) });
-  list.sort((a, b) => a.y - b.y);
-  for (const s of list) ctx.drawImage(s.img, Math.round(s.x - cx), Math.round(s.y - cy - 2));
+  const wf = G.move ? ((G.frame >> 3) & 1) + 1 : 0, nf = ((G.frame >> 5) & 1) ? 1 : 0, list = [];
+  for (const n of npcs()) {
+    let nx = n.x, ny = n.y; if (n.mv) { nx = n.ox + (n.x - n.ox) * n.mv.t; ny = n.oy + (n.y - n.oy) * n.mv.t; }
+    const still = ['pot', 'chest', 'boat', 'sign'].includes(n.spr);
+    list.push({ x: nx * TS, y: ny * TS, img: charImg(n.spr, n.dir || 0, still ? 0 : n.mv ? ((G.frame >> 3) & 1) + 1 : n.idle === false ? 0 : nf) });
+  }
+  G.chain.forEach((f, i) => list.push({ x: (f.ox + (f.x - f.ox) * t) * TS, y: (f.oy + (f.y - f.oy) * t) * TS - .1, img: charImg(G.party[i + 1], f.dir, G.move ? wf : 0) }));
+  if (G.ride) list.push({ x: ppx - 8, y: ppy - .05, img: horseImg(G.dir, G.move ? (G.frame >> 2) & 1 : 0), w: 48, h: 64, horse: 1 });
+  list.push({ x: ppx, y: ppy + (G.ride ? -14 : 0), img: charImg(G.party[0], G.dir, G.ride ? 0 : wf), sy: G.ride ? ppy : null });
+  list.sort((a, b) => (a.sy ?? a.y) - (b.sy ?? b.y));
+  for (const s of list) ctx.drawImage(s.img, Math.round(s.x - cx), Math.round(s.y - cy - (s.horse ? 32 : 16)));
+  if (fires.length) {
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    for (const [fx0, fy0] of fires) { const g = ctx.createRadialGradient(fx0 + 16, fy0 + 16, 4, fx0 + 16, fy0 + 16, 60); g.addColorStop(0, `rgba(255,140,40,${.28 + Math.random() * .08})`); g.addColorStop(1, 'rgba(255,60,0,0)'); ctx.fillStyle = g; ctx.fillRect(fx0 - 44, fy0 - 44, 120, 120); }
+    ctx.restore();
+    for (const [fx0, fy0] of fires) for (let k = 0; k < 5; k++) {
+      const h = 14 + Math.random() * 18 + Math.sin(G.frame / 5 + k + fx0) * 4, bx = fx0 + 2 + k * 6;
+      ctx.fillStyle = '#d0381a'; ctx.fillRect(bx, fy0 + 30 - h, 6, h); ctx.fillRect(bx + 1, fy0 + 26 - h, 4, 4);
+      ctx.fillStyle = '#ff8a20'; ctx.fillRect(bx + 1, fy0 + 30 - h * .7, 4, h * .7);
+      ctx.fillStyle = '#ffe070'; ctx.fillRect(bx + 2, fy0 + 30 - h * .35, 2, h * .35);
+    }
+  }
+  drawParticles(cx, cy);
+  for (const e of G.emotes) {
+    e.t++; let ex = ppx, ey = ppy;
+    if (e.target !== 'player') { const n = typeof e.target === 'string' ? findNpc(e.target) : e.target; if (n) { ex = n.x * TS; ey = n.y * TS; } }
+    const bob = Math.min(6, e.t);
+    ctx.fillStyle = '#fff'; ctx.fillRect(ex - cx + 6, ey - cy - 30 - bob, 20, 18); ctx.fillStyle = '#1c1219'; ctx.strokeStyle = '#1c1219'; ctx.strokeRect(ex - cx + 6.5, ey - cy - 29.5 - bob, 19, 17);
+    ctx.font = 'bold 14px sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = e.ch === '！' ? '#c02020' : '#1c1219'; ctx.fillText(e.ch, ex - cx + 16, ey - cy - 15 - bob);
+  }
+  G.emotes = G.emotes.filter(e => e.t < 70);
+}
+function drawParticles(cx, cy) {
+  const w = G.weather;
+  if (w === 'ash' && Math.random() < .5) G.parts.push({ kind: 'ash', x: cx + Math.random() * CW, y: cy - 4, vx: .3 + Math.random() * .3, vy: .5 + Math.random() * .5, life: 600, t: 0 });
+  if (w === 'rain') for (let i = 0; i < 4; i++) G.parts.push({ kind: 'rain', x: cx + Math.random() * (CW + 100), y: cy - 10, vx: -2, vy: 9, life: 60, t: 0 });
+  if (w === 'embers' && Math.random() < .6) G.parts.push({ kind: 'fire', x: cx + Math.random() * CW, y: cy + CH, vx: (Math.random() - .3) * .6, vy: -1 - Math.random(), life: 300, t: 0 });
+  if (w === 'petals' && Math.random() < .2) G.parts.push({ kind: 'petal', x: cx + Math.random() * CW, y: cy - 4, vx: .6, vy: .6, life: 600, t: 0 });
+  if (w === 'fireflies' && Math.random() < .05) G.parts.push({ kind: 'fly', x: cx + Math.random() * CW, y: cy + Math.random() * CH, vx: 0, vy: 0, life: 200, t: 0 });
+  if (w === 'snow' && Math.random() < .5) G.parts.push({ kind: 'snow', x: cx + Math.random() * CW, y: cy - 4, vx: .2, vy: .7, life: 600, t: 0 });
+  const k = OPT.speed > 1 ? 1 : 1;
+  for (const p of G.parts) {
+    p.t += k; p.x += p.vx; p.y += p.vy;
+    if (p.kind === 'fly') { p.x += Math.sin(p.t / 20) * .5; p.y += Math.cos(p.t / 25) * .4; }
+    const x = p.x - cx, y = p.y - cy, a = 1 - p.t / p.life;
+    switch (p.kind) {
+      case 'fire': ctx.fillStyle = a > .6 ? '#fff0a0' : a > .3 ? '#ff9a30' : '#d0401a'; ctx.fillRect(x, y, a > .5 ? 3 : 2, a > .5 ? 3 : 2); break;
+      case 'smoke': ctx.globalAlpha = a * .35; ctx.fillStyle = '#4a4040'; ctx.beginPath(); ctx.arc(x, y, 6 + p.t / 8, 0, 7); ctx.fill(); ctx.globalAlpha = 1; break;
+      case 'steam': ctx.globalAlpha = a * .5; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x, y, 3 + p.t / 15, 0, 7); ctx.fill(); ctx.globalAlpha = 1; break;
+      case 'ash': ctx.fillStyle = '#8a8a8a'; ctx.fillRect(x, y, 2, 2); break;
+      case 'rain': ctx.strokeStyle = 'rgba(190,205,230,.6)'; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - 2, y + 9); ctx.stroke(); break;
+      case 'petal': ctx.fillStyle = '#f8c8d8'; ctx.fillRect(x + Math.sin(p.t / 9) * 3, y, 3, 2); break;
+      case 'fly': ctx.globalAlpha = .5 + Math.sin(p.t / 6) * .5; ctx.fillStyle = '#e8ff80'; ctx.fillRect(x, y, 2, 2); ctx.globalAlpha = 1; break;
+      case 'snow': ctx.fillStyle = '#fff'; ctx.fillRect(x + Math.sin(p.t / 20) * 2, y, 2, 2); break;
+    }
+  }
+  G.parts = G.parts.filter(p => p.t < p.life && p.y < cy + CH + 20 && p.y > cy - 40);
+  if (G.parts.length > 600) G.parts.splice(0, G.parts.length - 600);
+}
+// ミニマップ
+const miniCv = $('#mini'), miniCtx = miniCv ? miniCv.getContext('2d') : null;
+function drawMini() {
+  if (!miniCv) return;
+  const show = OPT.mini && G.scene === 'map' && G.map && !G.map.noRide && !UI.top();
+  miniCv.style.display = show ? 'block' : 'none'; if (!show) return;
+  const m = G.map, s = Math.max(1, Math.min(3, Math.floor(96 / Math.max(m.w, m.h))));
+  if (!m.mini) { const c = mk(m.w * s, m.h * s), x = c.getContext('2d'); for (let y = 0; y < m.h; y++) for (let i = 0; i < m.w; i++) P(x, i * s, y * s, s, s, TILE_COLOR[m.g[y][i]] || '#000'); m.mini = c; miniCv.width = m.w * s; miniCv.height = m.h * s; }
+  miniCtx.drawImage(m.mini, 0, 0);
+  for (const n of npcs()) if (n.mark) P(miniCtx, n.x * s - 1, n.y * s - 1, s + 2, s + 2, '#ffd040');
+  if ((G.frame >> 4) % 2) P(miniCtx, G.px * s - 1, G.py * s - 1, s + 2, s + 2, '#ff2a2a');
+}
+async function showFullMap() {
+  const m = G.map; if (!m) return;
+  const s = Math.max(2, Math.min(8, Math.floor(Math.min(360 / m.w, 240 / m.h)))), c = mk(m.w * s, m.h * s), x = c.getContext('2d');
+  for (let y = 0; y < m.h; y++) for (let i = 0; i < m.w; i++) P(x, i * s, y * s, s, s, TILE_COLOR[m.g[y][i]] || '#000');
+  for (const n of npcs()) if (n.mark) P(x, n.x * s, n.y * s, s, s, '#ffd040');
+  P(x, G.px * s - 1, G.py * s - 1, s + 2, s + 2, '#ff2a2a');
+  const p = panel(`<div class="ttl">${esc(m.name)}</div>`, 8, 8, 368, 272, 'fullmap'); p.appendChild(c);
+  for (const l of (m.labels || [])) { const t = el('div', 'lbl', p); t.textContent = l[2]; t.style.left = (12 + l[0] * s * (c.offsetWidth / c.width || 1)) + 'px'; t.style.top = (30 + l[1] * s * (c.offsetHeight / c.height || 1)) + 'px'; }
+  const g = el('div', 'goal', p); g.textContent = '目的：' + (typeof GOAL === 'function' ? GOAL() : '');
+  await waitOk(); p.remove();
 }
 function draw() {
   ctx.imageSmoothingEnabled = false;
   if (G.scene === 'map' && G.map) drawMap();
   else if (G.scene === 'battle' && G.B) drawBattle();
-  else if (G.scene === 'title') ctx.drawImage(bgImg('title'), 0, 0);
-  tintEl.style.opacity = G.night && G.scene === 'map' ? 1 : 0;
+  else if (G.scene === 'kassen' && G.K) drawKassen();
+  else if (G.scene === 'title') { ctx.drawImage(bgImg('title'), 0, 0); drawParticles(0, 0); }
+  tintEl.className = G.scene === 'map' ? (G.weather === 'embers' ? 'fire' : G.weather === 'rain' ? 'rain' : G.night ? 'night' : '') : '';
+  drawMini();
 }
 function loop() {
   G.frame++;
+  if (Input.dirs.length && UI.top() && G.frame > Input.rep) { Input.q.push(Input.dirs[Input.dirs.length - 1]); Input.rep = G.frame + 7; }
   let k;
-  while ((k = Input.q.shift()) !== undefined) { const h = UI.top(); if (h) h.onKey(k); else if (G.scene === 'map' && !G.busy) mapKey(k); }
+  while ((k = Input.q.shift()) !== undefined) {
+    if (k === 'auto') { OPT.auto = !OPT.auto; saveOpt(); toast(OPT.auto ? 'オート ON' : 'オート OFF'); continue; }
+    if (k === 'speed') { OPT.speed = OPT.speed === 1 ? 3 : OPT.speed === 3 ? 5 : 1; saveOpt(); toast(`速さ ×${OPT.speed}`); continue; }
+    if (k === 'log') { if (!G.logOpen) showLog(); continue; }
+    if (k === 'set') { if (!G.setOpen && (G.scene === 'map' || G.scene === 'title') && !G.busy) run(settings); continue; }
+    const h = UI.top();
+    if (h) h.onKey(k); else if (G.scene === 'map' && !G.busy) mapKey(k);
+  }
   if (G.scene === 'map' && G.map) mapUpdate();
+  if (G.frame % 60 === 0 && G.scene !== 'title') G.playTime++;
   draw();
   requestAnimationFrame(loop);
+}
+function updateHud() { const s = $('[data-k="speed"]'), a = $('[data-k="auto"]'); if (s) s.textContent = '×' + OPT.speed; if (a) a.classList.toggle('lit', OPT.auto); }
+
+// ---------- ログ・設定 ----------
+function showLog() {
+  G.logOpen = true;
+  const p = panel(`<div class="ttl">会話の記録（上下で読む・Bで閉じる）</div><div class="logs">${G.log.slice(-150).map(l => `<div class="lg">${l.n ? `<b>${esc(l.n)}</b>` : ''}<span>${esc(l.t).replace(/\n/g, '')}</span></div>`).join('')}</div>`, 8, 8, 368, 272, 'logp');
+  const box = p.querySelector('.logs'); box.scrollTop = box.scrollHeight;
+  const h = { onKey(k) { if (k === 'up') box.scrollTop -= 40; else if (k === 'down') box.scrollTop += 40; else if (k === 'cancel' || k === 'ok' || k === 'log') { UI.pop(h); p.remove(); G.logOpen = false; } } };
+  UI.push(h);
+}
+async function settings() {
+  G.setOpen = true;
+  const LANG = { kago: '鹿児島弁', std: '標準語', both: '鹿児島弁＋訳' }, TXT = ['ゆっくり', 'ふつう', 'はやい', '一瞬'];
+  let i = 0;
+  while (true) {
+    const items = [
+      { label: '言葉', right: LANG[OPT.lang] }, { label: '文字の速さ', right: TXT[OPT.text] }, { label: '会話・戦闘の速さ', right: '×' + OPT.speed },
+      { label: 'オート送り', right: OPT.auto ? 'ON' : 'OFF' }, { label: 'BGM', right: Math.round(OPT.bgm * 10) }, { label: '効果音', right: Math.round(OPT.sfx * 10) }, { label: 'ミニマップ', right: OPT.mini ? '表示' : '非表示' }, { label: '閉じる' },
+    ];
+    const cyc = (k, list) => { const j = list.indexOf(OPT[k]); OPT[k] = list[(j + 1) % list.length]; };
+    i = await choose(items, { x: 96, y: 40, w: 200, start: i, title: '設定' });
+    if (i < 0 || i === 7) break;
+    if (i === 0) cyc('lang', ['kago', 'std', 'both']);
+    if (i === 1) OPT.text = (OPT.text + 1) % 4;
+    if (i === 2) cyc('speed', [1, 3, 5]);
+    if (i === 3) OPT.auto = !OPT.auto;
+    if (i === 4) OPT.bgm = Math.round(((OPT.bgm * 10 + 1) % 11)) / 10;
+    if (i === 5) { OPT.sfx = Math.round(((OPT.sfx * 10 + 1) % 11)) / 10; }
+    if (i === 6) OPT.mini = !OPT.mini;
+    saveOpt(); if (i === 5) SFX.play('ok');
+  }
+  G.setOpen = false;
 }
 
 // ---------- メニュー ----------
@@ -297,55 +553,69 @@ function memberLine(m) { return `HP ${m.hp}/${mhp(m)}　気 ${m.ki}/${mki(m)}`; 
 async function openMenu() {
   let last = 0;
   while (true) {
-    const money = panel(`<div class="money">${G.money}<small>文</small></div>`, 8, 160, 96);
-    const i = await choose(['つよさ', 'どうぐ', 'そうび', 'わざ', 'きろく'], { x: 8, y: 8, w: 96, start: last });
-    money.remove(); if (i < 0) return; last = i;
+    const info = panel(`<div class="money">${G.money}<small>文</small></div><div class="ptime">${Math.floor(G.playTime / 3600)}時間${String(Math.floor(G.playTime / 60) % 60).padStart(2, '0')}分</div>`, 8, 196, 96);
+    const i = await choose(['つよさ', 'どうぐ', 'そうび', 'わざ', 'ずかん', 'ならび', 'きろく'], { x: 8, y: 8, w: 96, start: last });
+    info.remove(); if (i < 0) return; last = i;
     if (i === 0) await showStatus();
     if (i === 1) await itemMenu();
     if (i === 2) await equipMenu();
     if (i === 3) await skillMenu();
-    if (i === 4) { await N(save() ? '冒険を 記録しました。' : '記録できませんでした（ブラウザの保存が無効です）。'); }
+    if (i === 4) await dexMenu();
+    if (i === 5) await orderMenu();
+    if (i === 6) await N(save() ? '冒険を 記録しました。' : '記録できませんでした（ブラウザの保存が無効です）。');
   }
 }
 async function showStatus() {
-  const rows = G.party.map(id => {
-    const m = G.mem[id], eq = ['w', 'a', 'h', 'x'].map(s => `${SLOT_NAMES[s]}：${m.eq[s] ? ITEMS[m.eq[s]].name : '―'}`).join('<br>');
-    return `<div class="st"><canvas data-por="${id}" width="32" height="32"></canvas><div><b>${esc(m.name)}</b>　Lv ${m.lv}<br>${memberLine(m)}<br>攻 ${stat(m, 'atk')}　守 ${stat(m, 'def')}　速 ${stat(m, 'spd')}<br><small>次のLvまで ${expAt(m.lv + 1) - m.exp}</small></div><div class="eq">${eq}</div></div>`;
-  }).join('');
-  const p = panel(rows, 8, 8, 368, 272);
-  p.querySelectorAll('canvas[data-por]').forEach(c => c.getContext('2d').drawImage(portraitImg(infoOf(c.dataset.por).por), 0, 0));
-  await waitOk(); p.remove();
+  let page = 0;
+  while (true) {
+    const id = G.party[page], m = G.mem[id], eq = ['w', 'a', 'h', 'x'].map(s => `<div>${SLOT_NAMES[s]}：${m.eq[s] ? ITEMS[m.eq[s]].name : '―'}</div>`).join('');
+    const heart = id === 'shinpachi' ? `<div class="heart">新八の心　<span class="jo">情 ${'●'.repeat(Math.min(8, pts('jo')))}</span>　<span class="ri">理 ${'●'.repeat(Math.min(8, pts('ri')))}</span>${F('in_senkichi') || pts('bond') ? `　仙吉との絆 ${'♥'.repeat(Math.min(6, pts('bond')))}` : ''}</div>` : '';
+    const p = panel(`<div class="st2"><canvas width="64" height="64"></canvas><div><b class="big">${esc(m.name)}</b>　Lv ${m.lv}<br>${memberLine(m)}<br>攻 ${stat(m, 'atk')}　守 ${stat(m, 'def')}　速 ${stat(m, 'spd')}<br><small>次のLvまで ${expAt(m.lv + 1) - m.exp}</small></div></div><div class="eqs">${eq}</div><div class="sks">わざ：${skillsOf(m).map(s => SKILLS[s].name).join('、') || 'なし'}</div>${heart}<div class="pg">◀ ${page + 1} / ${G.party.length} ▶</div>`, 8, 8, 368, 272);
+    p.querySelector('canvas').getContext('2d').drawImage(portraitImg(infoOf(id).por), 0, 0);
+    const k = await new Promise(res => { const h = { tap: true, onKey(k) { if (['left', 'right', 'up', 'down', 'ok', 'cancel'].includes(k)) { UI.pop(h); res(k); } } }; UI.push(h); });
+    p.remove();
+    if (k === 'cancel' || k === 'ok') return;
+    page = (page + (k === 'left' || k === 'up' ? -1 : 1) + G.party.length) % G.party.length; SFX.play('cur');
+  }
 }
-function invList(filter) { return Object.keys(G.inv).filter(id => G.inv[id] > 0 && filter(ITEMS[id])); }
-function descBox() { const d = place(el('div', 'win desc'), 8, 236, 368, 44); return d; }
+async function orderMenu() {
+  if (G.party.length < 2) { await N('並び替える仲間がいない。'); return; }
+  const a = await pickMember({ right: () => '先頭にする' }); if (!a) return;
+  G.party = [a, ...G.party.filter(x => x !== a)]; rebuildChain(); await N(`${G.mem[a].name}が 先頭になった。`);
+}
+function invList(filter) { return Object.keys(G.inv).filter(id => G.inv[id] > 0 && ITEMS[id] && filter(ITEMS[id])); }
+function descBox() { return place(el('div', 'win desc'), 8, 236, 368, 44); }
 async function pickMember(o = {}) {
   const ids = o.ids || G.party;
-  const i = await choose(ids.map(id => ({ label: G.mem[id].name, right: o.right ? o.right(G.mem[id]) : `HP ${G.mem[id].hp}/${mhp(G.mem[id])}` })), { x: o.x ?? 116, y: o.y ?? 8, w: o.w ?? 200 });
+  const i = await choose(ids.map(id => ({ label: G.mem[id].name, right: o.right ? o.right(G.mem[id]) : `HP ${G.mem[id].hp}/${mhp(G.mem[id])}` })), { x: o.x ?? 116, y: o.y ?? 8, w: o.w ?? 220, start: o.start || 0 });
   return i < 0 ? null : ids[i];
 }
 async function itemMenu() {
+  let last = 0;
   while (true) {
-    const ids = invList(() => true);
+    const ids = invList(() => true).sort((a, b) => (ITEMS[a].type === 'use' ? 0 : ITEMS[a].type === 'key' ? 2 : 1) - (ITEMS[b].type === 'use' ? 0 : ITEMS[b].type === 'key' ? 2 : 1));
     if (!ids.length) { await N('何も持っていない。'); return; }
     const d = descBox();
-    const i = await choose(ids.map(id => ({ label: ITEMS[id].name, right: '×' + G.inv[id], disabled: ITEMS[id].type !== 'use' })), { x: 116, y: 8, w: 200, maxH: 220, onMove: k => d.textContent = ITEMS[ids[k]].desc || '' });
-    d.remove(); if (i < 0) return;
-    const id = ids[i], t = ITEMS[id].healAll ? G.party[0] : await pickMember({ x: 200, y: 40, w: 176 });
+    const i = await choose(ids.map(id => ({ label: ITEMS[id].name, right: ITEMS[id].type === 'key' ? '大事' : '×' + G.inv[id], disabled: ITEMS[id].type !== 'use' || ITEMS[id].battleOnly })), { x: 116, y: 8, w: 220, maxH: 220, start: last, onMove: k => d.textContent = ITEMS[ids[k]].desc || '' });
+    d.remove(); if (i < 0) return; last = i;
+    const id = ids[i];
+    if (ITEMS[id].healAll || ITEMS[id].kiAll) { await useItem(id, G.party[0], false); continue; }
+    const t = await pickMember({ x: 200, y: 40, w: 176 });
     if (t) await useItem(id, t, false);
   }
 }
 async function useItem(id, tid, inBattle) {
-  const it = ITEMS[id], m = G.mem[tid], who = G.mem[G.party[0]].name;
+  const it = ITEMS[id], m = G.mem[tid];
   if (!G.inv[id]) { await msg(`しかし ${it.name}は もう なかった！`); return; }
   if (it.revive) {
     if (m.hp > 0) { await msg(`${m.name}は 倒れていない。`); return; }
-    addItem(id, -1); m.hp = Math.max(1, Math.floor(mhp(m) * it.revive)); SFX.play('heal'); await msg(`${it.name}を飲ませた！ ${m.name}が 起き上がった！`); return;
+    addItem(id, -1); m.hp = Math.max(1, Math.floor(mhp(m) * it.revive)); SFX.play('heal'); fxMember(tid, 'heal'); await msg(`${it.name}を飲ませた！ ${m.name}が 起き上がった！`); return;
   }
-  if (it.healAll) { addItem(id, -1); for (const p of G.party) { const x = G.mem[p]; if (x.hp > 0) x.hp = Math.min(mhp(x), x.hp + it.healAll); } SFX.play('heal'); await msg(`${it.name}を みんなで食べた！ 全員のHPが回復した！`); return; }
+  if (it.healAll || it.kiAll) { addItem(id, -1); for (const p of G.party) { const x = G.mem[p]; if (x.hp > 0) { if (it.healAll) x.hp = Math.min(mhp(x), x.hp + it.healAll); if (it.kiAll) x.ki = Math.min(mki(x), x.ki + it.kiAll); fxMember(p, 'heal'); } } SFX.play('heal'); if (inBattle) updateBStat(); await msg(`${it.name}を みんなで分けた！ 全員が元気になった！`); return; }
   if (m.hp <= 0) { await msg(`${m.name}は 倒れている……。`); return; }
   addItem(id, -1);
-  if (it.heal) { const v = Math.min(it.heal, mhp(m) - m.hp); m.hp += v; SFX.play('heal'); await msg(`${m.name}は ${it.name}を食べた！ HPが ${v} 回復した！`); }
-  if (it.ki) { const v = Math.min(it.ki, mki(m) - m.ki); m.ki += v; SFX.play('heal'); await msg(`${m.name}は ${it.name}をなめた！ 気が ${v} 回復した！`); }
+  if (it.heal) { const v = Math.min(it.heal, mhp(m) - m.hp); m.hp += v; SFX.play('heal'); fxMember(tid, 'heal'); await msg(`${m.name}は ${it.name}を食べた！ HPが ${v} 回復した！`); }
+  if (it.ki) { const v = Math.min(it.ki, mki(m) - m.ki); m.ki += v; SFX.play('heal'); await msg(`${m.name}は ${it.name}を口にした！ 気が ${v} 回復した！`); }
   if (inBattle) updateBStat();
 }
 async function msg(t) { if (G.B) await bmsg(t); else await N(t); }
@@ -353,22 +623,27 @@ function canEquip(m, it) { return it.type !== 'w' || HEROES[m.id].kinds.includes
 function equipDiff(m, it) { const k = it.type === 'w' ? 'atk' : 'def'; const cur = m.eq[it.type] ? (ITEMS[m.eq[it.type]][k] || 0) : 0; const d = (it[k] || 0) - cur; return `${k === 'atk' ? '攻' : '守'}${d >= 0 ? '+' : ''}${d}`; }
 function doEquip(m, id) { const it = ITEMS[id]; if (m.eq[it.type]) addItem(m.eq[it.type]); m.eq[it.type] = id; addItem(id, -1); m.hp = Math.min(m.hp, mhp(m)); m.ki = Math.min(m.ki, mki(m)); }
 async function equipMenu() {
-  const tid = await pickMember({ right: m => `Lv ${m.lv}` }); if (!tid) return;
-  const m = G.mem[tid];
+  let who = 0;
   while (true) {
-    const slots = ['w', 'a', 'h', 'x'];
-    const s = await choose(slots.map(k => ({ label: SLOT_NAMES[k], right: m.eq[k] ? ITEMS[m.eq[k]].name : '―' })), { x: 116, y: 8, w: 240, title: m.name + 'の装備' });
-    if (s < 0) return;
-    const slot = slots[s], ids = invList(it => it.type === slot && canEquip(m, it));
-    const opts = ids.map(id => ({ label: ITEMS[id].name, right: equipDiff(m, ITEMS[id]) }));
-    if (m.eq[slot]) opts.push({ label: '外す' });
-    if (!opts.length) { await N('装備できる物を 持っていない。'); continue; }
-    const d = descBox();
-    const i = await choose(opts, { x: 136, y: 40, w: 220, maxH: 190, onMove: k => d.textContent = ids[k] ? ITEMS[ids[k]].desc : '' });
-    d.remove(); if (i < 0) continue;
-    if (i >= ids.length) { addItem(m.eq[slot]); delete m.eq[slot]; m.hp = Math.min(m.hp, mhp(m)); }
-    else doEquip(m, ids[i]);
-    SFX.play('ok');
+    const tid = await pickMember({ right: m => `攻${stat(m, 'atk')} 守${stat(m, 'def')}`, start: who }); if (!tid) return;
+    who = G.party.indexOf(tid);
+    const m = G.mem[tid]; let si = 0;
+    while (true) {
+      const slots = ['w', 'a', 'h', 'x'];
+      const s = await choose(slots.map(k => ({ label: SLOT_NAMES[k], right: m.eq[k] ? ITEMS[m.eq[k]].name : '―' })), { x: 116, y: 8, w: 250, title: `${m.name}の装備（攻${stat(m, 'atk')} 守${stat(m, 'def')} 速${stat(m, 'spd')}）`, start: si });
+      if (s < 0) break;
+      si = s;
+      const slot = slots[s], ids = invList(it => it.type === slot && canEquip(m, it));
+      const opts = ids.map(id => ({ label: ITEMS[id].name, right: equipDiff(m, ITEMS[id]) }));
+      if (m.eq[slot]) opts.push({ label: '外す' });
+      if (!opts.length) { await N('装備できる物を 持っていない。'); continue; }
+      const d = descBox();
+      const i = await choose(opts, { x: 136, y: 40, w: 230, maxH: 190, onMove: k => d.textContent = ids[k] ? ITEMS[ids[k]].desc : '' });
+      d.remove(); if (i < 0) continue;
+      if (i >= ids.length) { addItem(m.eq[slot]); delete m.eq[slot]; m.hp = Math.min(m.hp, mhp(m)); }
+      else doEquip(m, ids[i]);
+      SFX.play('ok');
+    }
   }
 }
 async function skillMenu() {
@@ -376,7 +651,7 @@ async function skillMenu() {
   const m = G.mem[tid], sks = skillsOf(m);
   if (!sks.length) { await N(`${m.name}は まだ わざを覚えていない。`); return; }
   const d = descBox();
-  const i = await choose(sks.map(k => ({ label: SKILLS[k].name, right: '気' + SKILLS[k].ki, disabled: SKILLS[k].type !== 'heal' || m.ki < SKILLS[k].ki })), { x: 116, y: 40, w: 220, onMove: k => d.textContent = SKILLS[sks[k]].desc });
+  const i = await choose(sks.map(k => ({ label: SKILLS[k].name, right: '気' + SKILLS[k].ki, disabled: SKILLS[k].type !== 'heal' || m.ki < SKILLS[k].ki })), { x: 116, y: 40, w: 230, onMove: k => d.textContent = SKILLS[sks[k]].desc });
   d.remove(); if (i < 0) return;
   const sk = SKILLS[sks[i]];
   const targets = sk.target === 'allies' ? G.party : [await pickMember({ x: 200, y: 72, w: 176 })];
@@ -385,121 +660,210 @@ async function skillMenu() {
   for (const t of targets) { const x = G.mem[t]; if (x.hp <= 0) continue; const v = Math.min(mhp(x) - x.hp, Math.round(sk.pow + m.lv * 3)); x.hp += v; await N(`${x.name}の HPが ${v} 回復した！`); }
   SFX.play('heal');
 }
+async function dexMenu() {
+  let tab = 0;
+  while (true) {
+    const np = Object.keys(DEX.people).length, ne = DEX.events.length, nl = Object.keys(DEX.places).length;
+    const cnt = o => Object.keys(o).length;
+    tab = await choose([{ label: '人物', right: `${cnt(G.dex.p)}/${np}` }, { label: '年表', right: `${cnt(G.dex.e)}/${ne}` }, { label: 'ゆかりの地', right: `${cnt(G.dex.l)}/${nl}` }, { label: '全国のつながり', right: Object.keys(linkedPrefs()).length + '県' }, { label: '結末', right: `${cnt(G.dex.end)}/${DEX.endings.length}` }], { x: 116, y: 8, w: 220, title: '図鑑', start: tab });
+    if (tab < 0) return;
+    if (tab === 0) {
+      const ids = Object.keys(DEX.people); let last = 0;
+      while (true) {
+        const i = await choose(ids.map(id => G.dex.p[id] ? { label: DEX.people[id].name, right: DEX.people[id].fic ? '創作' : DEX.people[id].pref } : { label: '？？？', disabled: true }), { x: 116, y: 8, w: 250, maxH: 260, start: last });
+        if (i < 0) break; last = i;
+        const id = ids[i], d = DEX.people[id], por = infoOf(id) && infoOf(id).por;
+        const p = panel(`<div class="st2"><canvas width="64" height="64"></canvas><div><b class="big">${esc(d.name)}</b><br>${d.years || ''}<br>${esc(d.pref)}${d.fic ? '（架空の人物）' : ''}</div></div><div class="bio">${esc(d.bio)}</div>`, 8, 8, 368, 272);
+        if (por) p.querySelector('canvas').getContext('2d').drawImage(portraitImg(por), 0, 0); else p.querySelector('canvas').remove();
+        await waitOk(); p.remove();
+      }
+    }
+    if (tab === 1) {
+      const d = descBox();
+      await choose(DEX.events.map(e => G.dex.e[e.id] ? { label: `${e.year}　${e.title}` } : { label: '？？？？' }), { x: 8, y: 8, w: 368, maxH: 220, onMove: k => { const e = DEX.events[k]; d.textContent = G.dex.e[e.id] ? e.desc : 'まだ見ていない出来事'; } });
+      d.remove();
+    }
+    if (tab === 2) {
+      const ids = Object.keys(DEX.places), d = place(el('div', 'win desc tall'), 8, 200, 368, 80);
+      await choose(ids.map(id => G.dex.l[id] ? { label: DEX.places[id].name, right: DEX.places[id].pref } : { label: '？？？' }), { x: 8, y: 8, w: 368, maxH: 180, onMove: k => { const p = DEX.places[ids[k]]; d.innerHTML = G.dex.l[ids[k]] ? `<b>${esc(p.where)}</b><br>${esc(p.desc)}<br><small>※実際に訪れるときは、最新の公開情報を確かめてください</small>` : 'まだ訪れていない'; } });
+      d.remove();
+    }
+    if (tab === 3) {
+      const L = linkedPrefs(), keys = Object.keys(L);
+      const p = panel(`<div class="ttl">全国のつながり</div><div class="bio">この物語で出会った、鹿児島県の外の人物・出来事・場所です。日本國物語の別の作品で、また出会うかもしれません。</div>${keys.length ? keys.map(k => `<div class="lk"><b>${esc(k)}</b>　${L[k].map(esc).join('、')}</div>`).join('') : '<div class="lk">まだ つながりはない</div>'}`, 8, 8, 368, 272, 'scrollp');
+      await waitOk(); p.remove();
+    }
+    if (tab === 4) {
+      const p = panel(`<div class="ttl">結末</div>${DEX.endings.map(e => `<div class="lk">${G.dex.end[e.id] ? `<b>${esc(e.name)}</b>　${esc(e.desc)}` : '？？？？？'}</div>`).join('')}<div class="bio"><br>西南戦争での選択と、新八の心（情と理）、仙吉との絆で結末が変わります。</div>`, 8, 8, 368, 272, 'scrollp');
+      await waitOk(); p.remove();
+    }
+  }
+}
 async function shop(list) {
   while (true) {
-    const money = panel(`<div class="money">${G.money}<small>文</small></div>`, 8, 160, 96);
+    const money = panel(`<div class="money">${G.money}<small>文</small></div>`, 8, 196, 96);
     const c = await choose(['買う', '売る', 'やめる'], { x: 8, y: 8, w: 96 });
     money.remove();
     if (c < 0 || c === 2) { await N('またおじゃったもんせ。'); return; }
     if (c === 0) {
+      let last = 0;
       while (true) {
-        const ids = list, d = descBox(), mb = panel(`<div class="money">${G.money}<small>文</small></div>`, 8, 160, 96);
-        const i = await choose(ids.map(id => ({ label: ITEMS[id].name, right: ITEMS[id].price + '文' })), {
-          x: 112, y: 8, w: 264, maxH: 220, onMove: k => {
+        const ids = list, d = descBox(), mb = panel(`<div class="money">${G.money}<small>文</small></div>`, 8, 196, 96);
+        const i = await choose(ids.map(id => ({ label: ITEMS[id].name + (G.inv[id] ? `（${G.inv[id]}）` : ''), right: ITEMS[id].price + '文' })), {
+          x: 112, y: 8, w: 264, maxH: 220, start: last, onMove: k => {
             const it = ITEMS[ids[k]]; let s = it.desc || '';
             if (it.type !== 'use') s += '　' + G.party.map(p => { const m = G.mem[p]; return canEquip(m, it) ? `${m.name}${equipDiff(m, it)}` : `${m.name}×`; }).join(' ');
             d.textContent = s;
           }
         });
-        d.remove(); mb.remove(); if (i < 0) break;
-        const it = ITEMS[ids[i]];
-        if (G.money < it.price) { SFX.play('ng'); await N('お金が 足りもはん。'); continue; }
-        G.money -= it.price; addItem(ids[i]); SFX.play('ok');
+        d.remove(); mb.remove(); if (i < 0) break; last = i;
+        const it = ITEMS[ids[i]], can = Math.floor(G.money / it.price);
+        if (can < 1) { SFX.play('ng'); await N('お金が 足りもはん。'); continue; }
+        const n = it.type === 'use' ? await qty(Math.min(99, can), k => `${k * it.price}文`, `${it.name}を いくつ買う？`) : 1;
+        if (!n) continue;
+        G.money -= it.price * n; addItem(ids[i], n); SFX.play('coin');
         if (it.type !== 'use') {
-          const can = G.party.filter(p => canEquip(G.mem[p], it));
-          if (can.length && await ask(null, `${it.name}を 今すぐ装備しますか？`)) {
-            const t = await pickMember({ ids: can, right: m => equipDiff(m, it) });
+          const cans = G.party.filter(p => canEquip(G.mem[p], it));
+          if (cans.length && await ask(null, `${it.name}を 今すぐ装備しますか？`)) {
+            const t = await pickMember({ ids: cans, right: m => equipDiff(m, it) });
             if (t) { doEquip(G.mem[t], ids[i]); await N(`${G.mem[t].name}は ${it.name}を 装備した！`); }
-          } else await N('毎度おおきに！');
-        } else await N('毎度おおきに！');
+          }
+        }
       }
     }
     if (c === 1) {
+      let last = 0;
       while (true) {
-        const ids = invList(it => it.price > 0);
+        const ids = invList(it => it.price > 0 && it.type !== 'key');
         if (!ids.length) { await N('売れる物が ありもはん。'); break; }
-        const i = await choose(ids.map(id => ({ label: ITEMS[id].name + ' ×' + G.inv[id], right: Math.floor(ITEMS[id].price / 2) + '文' })), { x: 112, y: 8, w: 264, maxH: 220 });
-        if (i < 0) break;
-        const id = ids[i]; G.money += Math.floor(ITEMS[id].price / 2); addItem(id, -1); SFX.play('ok');
+        const i = await choose(ids.map(id => ({ label: ITEMS[id].name + ' ×' + G.inv[id], right: Math.floor(ITEMS[id].price / 2) + '文' })), { x: 112, y: 8, w: 264, maxH: 220, start: Math.min(last, ids.length - 1) });
+        if (i < 0) break; last = i;
+        const id = ids[i], half = Math.floor(ITEMS[id].price / 2);
+        const n = G.inv[id] > 1 ? await qty(G.inv[id], k => `${k * half}文`, `${ITEMS[id].name}を いくつ売る？`) : 1;
+        if (!n) continue;
+        G.money += half * n; addItem(id, -n); SFX.play('coin');
       }
     }
   }
 }
 async function shopTalk(kind) {
-  if (kind === 'dougu') await S('merchant', 'いらっしゃいもうせ！\n薩摩の味、そろえちょります。');
-  else await S('smith', 'よか鋼が入っちょっど。\n見ていっきやんせ。');
+  const s = SHOP_TALK[kind] || SHOP_TALK.dougu;
+  await S(s[0], s[1], s[2]);
   await shop(SHOPS[kind]());
 }
-async function rest() { await fadeOut(); restAll(); await sleep(300); await fadeIn(); SFX.play('heal'); await N('ぐっすり眠って、みんな元気になった！'); }
+async function rest() { await fadeOut(); restAll(); bgm(null); SFX.play('bell'); await sleep(900); await fadeIn(); SFX.play('heal'); if (G.map && G.map.bgm) { Audio8.cur = null; bgm(typeof G.map.bgm === 'function' ? G.map.bgm() : G.map.bgm); } await N('ぐっすり眠って、みんな元気になった！'); }
+async function rentHorse(price = 30) {
+  if (G.ride) { await N('もう 馬に乗っている。'); return; }
+  if (await ask('umakata', `馬に乗っていきもはんか？\n${price}文で、野山なら どこでん飛ばせもすど。`, `馬に乗っていきませんか？\n${price}文で、野山ならどこへでも飛ばせますよ。`)) {
+    if (G.money < price) { await S('umakata', '……銭が足りもはんな。', '……お金が足りませんね。'); return; }
+    G.money -= price; G.ride = true; SFX.play('horse'); await N('馬に乗った！ 野山を速く駆けられる。\n（町や家に入ると 降りる）');
+  }
+}
 
 // ---------- 戦闘 ----------
+const B_POS = (i, n) => { const w = Math.floor((368 - (n - 1) * 4) / n); return { x: (8 + i * (w + 4) + w / 2) * CW / SW, y: 40 * CW / SW }; };
 function calcDmg(atk, def, pow) { const b = Math.max(1, atk * pow - def * .5); return Math.max(1, Math.round(b * (.85 + Math.random() * .3))); }
 function layoutEnemies(B) {
-  const imgs = B.es.map(e => e.img), sc = 2, gap = 10;
-  const total = imgs.reduce((s, c) => s + c.width * sc, 0) + gap * (imgs.length - 1);
-  let x = (SW - total) / 2;
-  B.es.forEach(e => { e.w = e.img.width * sc; e.h = e.img.height * sc; e.x = Math.round(x); e.y = 184 - e.h; x += e.w + gap; });
+  const gap = 12, total = B.es.reduce((s, e) => s + e.img.width, 0) + gap * (B.es.length - 1);
+  const sc = total > CW - 20 ? (CW - 20) / total : 1;
+  let x = (CW - total * sc) / 2;
+  B.es.forEach(e => { e.w = Math.round(e.img.width * sc); e.h = Math.round(e.img.height * sc); e.x = Math.round(x); e.y = 248 - e.h; x += e.w + gap * sc; });
 }
+function fx(type, x, y) { if (G.B) G.B.fx.push({ type, x, y, t: 0, dur: { slash: 18, chest: 28, shot: 16, boom: 34, heal: 34, buff: 30, bite: 16, hit: 14, ki: 30 }[type] || 20 }); }
+function fxEnemy(e, type) { fx(type, e.x + e.w / 2, e.y + e.h / 2); }
+function fxMember(id, type) { const i = G.party.indexOf(id); if (i >= 0 && G.B) { const p = B_POS(i, G.party.length); fx(type, p.x, p.y + 30); } }
+function num(x, y, text, col) { if (G.B) G.B.nums.push({ x, y, text, col, t: 0 }); }
 function drawBattle() {
   const B = G.B;
   ctx.drawImage(bgImg(B.bg), 0, 0);
+  if (B.bg === 'storm' || B.bg === 'rain') for (let i = 0; i < 6; i++) { const x = Math.random() * CW, y = Math.random() * CH; ctx.strokeStyle = 'rgba(200,210,230,.5)'; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - 4, y + 16); ctx.stroke(); }
+  if (B.bg === 'fire' || B.bg === 'shiroyama') for (let i = 0; i < 3; i++) { ctx.fillStyle = Math.random() < .5 ? '#ff9a30' : '#e04a1a'; ctx.fillRect(Math.random() * CW, 150 + Math.random() * 230, 2, 2); }
+  const bob = Math.sin(G.frame / 20) * 1.5;
   for (const e of B.es) {
-    if (e.dead) e.alpha = Math.max(0, e.alpha - .05);
+    if (e.dead) e.alpha = Math.max(0, e.alpha - .04);
     if (e.alpha <= 0) continue;
     if (e.flash > 0) { e.flash--; if ((e.flash >> 1) % 2) continue; }
-    ctx.globalAlpha = e.alpha; ctx.drawImage(e.img, e.x, e.y, e.w, e.h); ctx.globalAlpha = 1;
+    ctx.globalAlpha = e.alpha; ctx.drawImage(e.img, e.x + (e.shk > 0 ? (e.shk-- % 2 ? 3 : -3) : 0), e.y + (e.d.spr.t ? 0 : bob), e.w, e.h); ctx.globalAlpha = 1;
+    if (e.rare && G.frame % 20 < 3) { ctx.fillStyle = '#fff'; ctx.fillRect(e.x + Math.random() * e.w, e.y + Math.random() * e.h, 2, 2); }
   }
   if (B.sel != null && B.es[B.sel] && !B.es[B.sel].dead && (G.frame >> 3) % 2) {
     const e = B.es[B.sel]; ctx.fillStyle = '#ffe070'; const cx = e.x + e.w / 2;
-    for (let i = 0; i < 6; i++) ctx.fillRect(cx - 6 + i, e.y - 14 + i, 12 - i * 2, 1);
+    for (let i = 0; i < 8; i++) ctx.fillRect(cx - 8 + i, e.y - 18 + i, 16 - i * 2, 1);
   }
+  for (const f of B.fx) {
+    f.t += OPT.speed; const p = f.t / f.dur;
+    ctx.save();
+    switch (f.type) {
+      case 'slash': case 'chest': {
+        const big = f.type === 'chest'; ctx.strokeStyle = big ? '#fff2c0' : '#ffffff'; ctx.lineWidth = big ? 6 : 3;
+        for (let k = 0; k < (big ? 3 : 2); k++) { const o = (k - 1) * 14; ctx.globalAlpha = 1 - p; ctx.beginPath(); ctx.moveTo(f.x - 50 + o, f.y - 50); ctx.lineTo(f.x - 50 + o + 100 * Math.min(1, p * 2), f.y - 50 + 100 * Math.min(1, p * 2)); ctx.stroke(); }
+        if (big) { ctx.globalAlpha = (1 - p) * .5; ctx.fillStyle = '#c02020'; ctx.fillRect(f.x - 60, f.y - 4, 120 * Math.min(1, p * 3), 8); }
+        break;
+      }
+      case 'shot': ctx.globalAlpha = 1 - p; ctx.fillStyle = '#ffe080'; for (let k = 0; k < 8; k++) { const a = k / 8 * 6.28, r = 6 + p * 22; ctx.fillRect(f.x + Math.cos(a) * r, f.y + Math.sin(a) * r, 3, 3); } ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(f.x, f.y, 8 * (1 - p), 0, 7); ctx.fill(); break;
+      case 'boom': ctx.globalAlpha = 1 - p; ctx.fillStyle = '#ff8a20'; ctx.beginPath(); ctx.arc(f.x, f.y, 10 + p * 50, 0, 7); ctx.fill(); ctx.fillStyle = '#ffe080'; ctx.beginPath(); ctx.arc(f.x, f.y, 6 + p * 26, 0, 7); ctx.fill(); ctx.fillStyle = '#3a3030'; for (let k = 0; k < 10; k++) ctx.fillRect(f.x + Math.cos(k) * p * 70, f.y + Math.sin(k * 2) * p * 50, 4, 4); break;
+      case 'heal': case 'ki': ctx.globalAlpha = 1 - p; ctx.fillStyle = f.type === 'ki' ? '#80c0ff' : '#a0ff90'; for (let k = 0; k < 10; k++) { const xx = f.x + Math.sin(k * 3.1) * 30, yy = f.y + 20 - p * 60 - (k % 3) * 8; ctx.fillRect(xx, yy, 3, 8); ctx.fillRect(xx - 3, yy + 3, 9, 2); } break;
+      case 'buff': ctx.globalAlpha = 1 - p; ctx.strokeStyle = '#ffd040'; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(f.x, f.y + 30 - p * 50, 40, 10, 0, 0, 7); ctx.stroke(); break;
+      case 'bite': ctx.globalAlpha = 1 - p; ctx.fillStyle = '#fff'; for (let k = 0; k < 4; k++) { ctx.fillRect(f.x - 20 + k * 12, f.y - 20 + p * 10, 5, 14); ctx.fillRect(f.x - 20 + k * 12, f.y + 14 - p * 10, 5, 14); } break;
+      case 'hit': ctx.globalAlpha = (1 - p) * .8; ctx.fillStyle = '#ff3a3a'; ctx.beginPath(); ctx.arc(f.x, f.y, 20 + p * 20, 0, 7); ctx.fill(); break;
+    }
+    ctx.restore();
+  }
+  B.fx = B.fx.filter(f => f.t < f.dur);
+  ctx.font = 'bold 22px DotGothic16, monospace'; ctx.textAlign = 'center';
+  for (const n of B.nums) { n.t += OPT.speed; const y = n.y - Math.min(20, n.t * 1.5); ctx.globalAlpha = Math.min(1, 2 - n.t / 30); ctx.lineWidth = 4; ctx.strokeStyle = '#1c1219'; ctx.strokeText(n.text, n.x, y); ctx.fillStyle = n.col || '#fff'; ctx.fillText(n.text, n.x, y); ctx.globalAlpha = 1; }
+  B.nums = B.nums.filter(n => n.t < 60);
 }
 function updateBStat() {
   const B = G.B; if (!B) return;
   G.party.forEach((id, i) => {
-    const m = G.mem[id], e = B.statEls[i];
-    e.classList.toggle('dead', m.hp <= 0); e.classList.toggle('act', B.actIdx === i);
-    e.innerHTML = `<div class="bn">${esc(m.name)}<span>Lv${m.lv}</span></div><div>HP <b>${m.hp}</b><small>/${mhp(m)}</small></div><div>気 <b>${m.ki}</b><small>/${mki(m)}</small></div>`;
+    const m = G.mem[id], e = B.statEls[i]; if (!e) return;
+    e.classList.toggle('dead', m.hp <= 0); e.classList.toggle('act', B.actIdx === i); e.classList.toggle('low', m.hp > 0 && m.hp < mhp(m) / 4);
+    const hp = Math.max(0, m.hp / mhp(m)), ki = Math.max(0, m.ki / Math.max(1, mki(m)));
+    e.innerHTML = `<div class="bn">${esc(m.name)}<span>Lv${m.lv}</span></div><div>HP <b>${m.hp}</b><small>/${mhp(m)}</small></div><div class="bar"><i style="width:${hp * 100}%"></i></div><div>気 <b>${m.ki}</b><small>/${mki(m)}</small></div><div class="bar ki"><i style="width:${ki * 100}%"></i></div>`;
   });
 }
 function hurtFlash(id) { const i = G.party.indexOf(id); const e = G.B && G.B.statEls[i]; if (e) { e.classList.remove('hurt'); void e.offsetWidth; e.classList.add('hurt'); } }
-async function bmsg(t, ms = 750) { const B = G.B; B.msgEl.textContent = t; await waitOk(ms); }
+async function bmsg(t, ms = 800) { const B = G.B; B.msgEl.textContent = t; G.log.push({ n: '', t }); await waitOk(OPT.auto ? T(ms) : T(ms)); }
 function setMsgWide(wide) { const e = G.B.msgEl; if (wide) place(e, 8, 196, 368, 84); else place(e, 112, 196, 264, 84); }
 async function battle(group, opt = {}) {
   hideDlg();
-  const prevScene = G.scene;
+  const prevScene = G.scene, prevBgm = Audio8.cur;
   const counts = {}; group.forEach(id => counts[id] = (counts[id] || 0) + 1);
   const seen = {};
   const B = {
     es: group.map(id => {
       const d = ENEMIES[id]; let name = d.name;
       if (counts[id] > 1) { seen[id] = (seen[id] || 0) + 1; name += 'ABCD'[seen[id] - 1]; }
-      return { id, d, name, hp: d.hp, atk: d.atk, def: d.def, spd: d.spd, img: enemyImg(id), flash: 0, alpha: 1, dead: false, buff: 0 };
-    }), turn: 1, opt, bg: opt.bg || 'field', defend: {}, sel: null, actIdx: -1,
+      return { id, d, name, hp: d.hp, atk: d.atk, def: d.def, spd: d.spd, img: enemyImg(id), flash: 0, alpha: 1, dead: false, buff: 0, rare: d.rare, shk: 0 };
+    }), turn: 1, opt, bg: opt.bg || 'field', defend: {}, sel: null, actIdx: -1, fx: [], nums: [],
   };
   layoutEnemies(B);
+  for (const id of group) if (ENEMIES[id].dex) meet(ENEMIES[id].dex);
   SFX.play('enc'); flashScreen(); await sleep(350);
   G.B = B; G.scene = 'battle';
+  bgm(opt.bgm || (opt.boss ? 'boss' : 'battle'));
   const n = G.party.length, w = Math.floor((368 - (n - 1) * 4) / n);
-  B.statEls = G.party.map((id, i) => place(el('div', 'win bst'), 8 + i * (w + 4), 6, w));
+  B.statEls = G.party.map((id, i) => place(el('div', 'win bst'), 8 + i * (w + 4), 4, w));
   B.msgEl = el('div', 'win bmsg'); setMsgWide(true); updateBStat();
   const names = [...new Set(B.es.map(e => e.d.name))].join('と');
-  await bmsg(opt.boss ? `${names}が 立ちはだかった！` : `${names}が あらわれた！`, 1100);
+  await bmsg(opt.intro || (opt.boss ? `${names}が 立ちはだかった！` : B.es.some(e => e.rare) ? `${names}が あらわれた！ ……なにやら様子が違う！` : `${names}が あらわれた！`), 1200);
   let result = null;
   while (!result) {
     const acts = await inputCommands(B);
     setMsgWide(true); B.actIdx = -1; updateBStat();
     if (acts === 'run') {
-      await bmsg(`${G.mem[G.party[0]].name}たちは 逃げ出した！`, 500);
+      await bmsg(`${G.mem[G.party[0]].name}たちは 逃げ出した！`, 500); SFX.play('run');
       if (opt.noRun) { await bmsg('しかし 退くことは許されない！'); result = await execTurn(B, []); }
-      else if (Math.random() < .65) { result = 'run'; }
+      else if (Math.random() < .7) { result = 'run'; }
       else { await bmsg('しかし 回り込まれてしまった！'); result = await execTurn(B, []); }
     } else result = await execTurn(B, acts);
   }
   if (result === 'win') await victory(B);
-  if (result === 'lose') { await bmsg(`${G.mem[G.party[0]].name}たちは 力尽きた……`, 1600); }
+  if (result === 'lose') { bgm('sad'); await bmsg(`${G.mem[G.party[0]].name}たちは 力尽きた……`, 1800); }
   B.statEls.forEach(e => e.remove()); B.msgEl.remove();
   G.B = null; G.scene = prevScene === 'battle' ? 'map' : prevScene;
+  Audio8.cur = null; if (prevBgm) bgm(prevBgm);
   if (result === 'lose') {
     if (opt.canLose) { for (const id of G.party) { const m = G.mem[id]; if (m.hp <= 0) m.hp = 1; } return 'lose'; }
     throw GAMEOVER;
@@ -514,6 +878,7 @@ async function inputCommands(B) {
     const id = alive[i], m = G.mem[id];
     B.actIdx = G.party.indexOf(id); updateBStat(); setMsgWide(false);
     B.msgEl.textContent = `${m.name}は どうする？`;
+    if (OPT.auto && !B.opt.boss) { const e = B.es.findIndex(e => !e.dead); acts.push({ type: 'atk', actor: id, t: e }); i++; continue; }
     const c = await choose(['たたかう', 'わざ', 'どうぐ', 'ぼうぎょ', 'にげる'], { x: 8, y: 172, w: 100, cancel: i > 0 });
     if (c < 0) { i--; acts.pop(); continue; }
     let act = null;
@@ -521,20 +886,21 @@ async function inputCommands(B) {
     if (c === 1) {
       const sks = skillsOf(m);
       if (!sks.length) { B.msgEl.textContent = 'まだ わざを覚えていない。'; await waitOk(900); continue; }
-      const k = await choose(sks.map(s => ({ label: SKILLS[s].name, right: '気' + SKILLS[s].ki, disabled: m.ki < SKILLS[s].ki })), { x: 112, y: 160, w: 200, onMove: j => B.msgEl.textContent = SKILLS[sks[j]].desc });
+      const k = await choose(sks.map(s => ({ label: SKILLS[s].name, right: '気' + SKILLS[s].ki, disabled: m.ki < SKILLS[s].ki })), { x: 112, y: 130, w: 220, maxH: 140, onMove: j => B.msgEl.textContent = SKILLS[sks[j]].desc });
       if (k < 0) continue;
       const sk = SKILLS[sks[k]]; let t = null;
       if (sk.target === 'enemy') { t = await pickEnemy(B); if (t < 0) continue; }
-      if (sk.target === 'ally') { t = await pickMember({ x: 112, y: 100, w: 200 }); if (!t) continue; }
+      if (sk.target === 'ally') { t = await pickMember({ x: 112, y: 100, w: 220 }); if (!t) continue; }
       act = { type: 'skill', sk: sks[k], actor: id, t };
     }
     if (c === 2) {
       const ids = invList(it => it.type === 'use');
       if (!ids.length) { B.msgEl.textContent = '使える道具を 持っていない。'; await waitOk(900); continue; }
-      const k = await choose(ids.map(x => ({ label: ITEMS[x].name, right: '×' + G.inv[x] })), { x: 112, y: 60, w: 200, maxH: 130, onMove: j => B.msgEl.textContent = ITEMS[ids[j]].desc });
+      const k = await choose(ids.map(x => ({ label: ITEMS[x].name, right: '×' + G.inv[x] })), { x: 112, y: 60, w: 220, maxH: 130, onMove: j => B.msgEl.textContent = ITEMS[ids[j]].desc });
       if (k < 0) continue;
-      const t = ITEMS[ids[k]].healAll ? id : await pickMember({ x: 112, y: 100, w: 200 }); if (!t) continue;
-      act = { type: 'item', item: ids[k], actor: id, t };
+      const it = ITEMS[ids[k]];
+      if (it.target === 'enemy') { const t = await pickEnemy(B); if (t < 0) continue; act = { type: 'throw', item: ids[k], actor: id, t }; }
+      else { const t = (it.healAll || it.kiAll) ? id : await pickMember({ x: 112, y: 100, w: 220 }); if (!t) continue; act = { type: 'item', item: ids[k], actor: id, t }; }
     }
     if (c === 3) act = { type: 'def', actor: id };
     if (c === 4) { B.actIdx = -1; return 'run'; }
@@ -546,121 +912,265 @@ async function inputCommands(B) {
 async function pickEnemy(B) {
   const alive = B.es.map((e, i) => i).filter(i => !B.es[i].dead);
   if (alive.length === 1) return alive[0];
-  const k = await choose(alive.map(i => B.es[i].name), { x: 112, y: 120, w: 200, onMove: j => B.sel = alive[j] });
+  const k = await choose(alive.map(i => B.es[i].name), { x: 112, y: 120, w: 220, onMove: j => B.sel = alive[j] });
   B.sel = null; return k < 0 ? -1 : alive[k];
 }
 const aliveMembers = () => G.party.map(id => G.mem[id]).filter(m => m.hp > 0);
 async function execTurn(B, acts) {
   const all = acts.map(a => ({ ...a, side: 'p', r: stat(G.mem[a.actor], 'spd') * (.7 + Math.random() * .6) }));
-  for (const e of B.es) if (!e.dead) all.push({ side: 'e', e, r: e.spd * (.7 + Math.random() * .6) });
+  for (const e of B.es) if (!e.dead) for (let k = 0; k < (e.d.acts || 1); k++) all.push({ side: 'e', e, r: e.spd * (.7 + Math.random() * .6) });
   all.sort((a, b) => b.r - a.r);
   B.defend = {}; for (const a of acts) if (a.type === 'def') B.defend[a.actor] = true;
   for (const a of all) {
     if (a.side === 'p') { if (G.mem[a.actor].hp <= 0) continue; await pAct(B, a); }
     else { if (a.e.dead) continue; await eAct(B, a.e); }
-    if (B.es.every(e => e.dead)) return 'win';
+    if (B.es.every(e => e.dead)) return B.es.every(e => e.fled) ? 'fled' : 'win';
     if (!aliveMembers().length) return 'lose';
   }
   B.turn++;
   return null;
 }
 function retarget(B, t) { const e = B.es[t]; if (e && !e.dead) return e; return B.es.find(x => !x.dead); }
-async function hitEnemy(B, e, atk, pow, sure) {
-  if (!sure && Math.random() < .05) { SFX.play('cancel'); await bmsg('しかし 攻撃は外れた！'); return; }
+function weaponFx(m) { const w = m.eq.w && ITEMS[m.eq.w]; return w && (w.kind === 'gun' || w.kind === 'pistol') ? 'shot' : w && w.kind === 'fang' ? 'bite' : 'slash'; }
+async function hitEnemy(B, e, atk, pow, sure, fxType = 'slash') {
+  if (!sure && Math.random() < (e.d.evade || .05)) { SFX.play('miss'); await bmsg('しかし 攻撃は かわされた！'); return; }
   let dmg = calcDmg(atk, e.def, pow);
-  if (Math.random() < 1 / 20) { dmg = Math.round(atk * pow * 1.5); await bmsg('見事な一撃！', 450); }
-  e.hp -= dmg; e.flash = 14; SFX.play('hit');
-  await bmsg(`${e.name}に ${dmg} の ダメージ！`);
+  const crit = Math.random() < 1 / 18;
+  if (crit) { dmg = Math.round(atk * pow * 1.6); }
+  if (e.d.armor) dmg = Math.max(1, Math.min(dmg, e.d.armor + (Math.random() < .5 ? 1 : 0)));
+  fxEnemy(e, crit && fxType === 'slash' ? 'chest' : fxType); SFX.play(fxType === 'shot' ? 'gun' : fxType === 'boom' ? 'boom' : crit ? 'chest' : 'slash');
+  await sleep(T(160));
+  e.hp -= dmg; e.flash = 14; e.shk = 8; num(e.x + e.w / 2, e.y + e.h / 3, dmg, crit ? '#ffd040' : '#fff');
+  if (crit) { flashScreen('#fff'); await bmsg('見事な一撃！', 450); }
+  await bmsg(`${e.name}に ${dmg} の ダメージ！`, 650);
   if (e.hp <= 0) { e.hp = 0; e.dead = true; SFX.play('kill'); await bmsg(e.d.defeat ? e.d.defeat.replace('{n}', e.name) : `${e.name}を 倒した！`); }
 }
-async function hitMember(B, m, atk, pow) {
+async function hitMember(B, m, atk, pow, fxType = 'hit') {
+  if (Math.random() < Math.min(.25, stat(m, 'spd') / 600)) { SFX.play('miss'); await bmsg(`${m.name}は ひらりと かわした！`, 600); return; }
   let dmg = calcDmg(atk, stat(m, 'def'), pow);
   if (B.defend[m.id]) dmg = Math.max(1, Math.round(dmg / 2));
-  m.hp = Math.max(0, m.hp - dmg); SFX.play('hurt'); shake(); hurtFlash(m.id); updateBStat();
-  await bmsg(`${m.name}は ${dmg} の ダメージを受けた！`);
+  m.hp = Math.max(0, m.hp - dmg); fxMember(m.id, fxType); SFX.play(fxType === 'shot' ? 'gun' : fxType === 'boom' ? 'boom' : 'hurt'); shake(fxType === 'boom'); hurtFlash(m.id); updateBStat();
+  const p = B_POS(G.party.indexOf(m.id), G.party.length); num(p.x, p.y + 40, dmg, '#ff8a8a');
+  await bmsg(`${m.name}は ${dmg} の ダメージを受けた！`, 650);
   if (m.hp <= 0) await bmsg(`${m.name}は 倒れた……`);
 }
 async function pAct(B, a) {
   const m = G.mem[a.actor];
-  if (a.type === 'def') { await bmsg(`${m.name}は 身を守っている。`, 500); return; }
-  if (a.type === 'atk') { const e = retarget(B, a.t); if (!e) return; await bmsg(`${m.name}の 攻撃！`, 400); await hitEnemy(B, e, stat(m, 'atk'), 1); return; }
+  if (a.type === 'def') { fxMember(a.actor, 'buff'); await bmsg(`${m.name}は 身を守っている。`, 500); return; }
+  if (a.type === 'atk') { const e = retarget(B, a.t); if (!e) return; await bmsg(`${m.name}の 攻撃！`, 350); await hitEnemy(B, e, stat(m, 'atk'), 1, false, weaponFx(m)); return; }
   if (a.type === 'item') { await useItem(a.item, a.t, true); updateBStat(); return; }
+  if (a.type === 'throw') { const it = ITEMS[a.item], e = retarget(B, a.t); if (!e || !G.inv[a.item]) return; addItem(a.item, -1); await bmsg(`${m.name}は ${it.name}を 投げつけた！`, 500); await hitEnemy(B, e, it.dmg, 1, true, 'boom'); return; }
   if (a.type === 'skill') {
     const sk = SKILLS[a.sk];
     if (m.ki < sk.ki) { await bmsg(`${m.name}は ${sk.name}を使おうとした！ しかし 気が足りない！`); return; }
     m.ki -= sk.ki; updateBStat();
-    await bmsg(`${m.name}の ${sk.name}！`, 450);
+    await bmsg(sk.say ? `${m.name}「${sk.say}」` : `${m.name}の ${sk.name}！`, 550);
     if (sk.type === 'atk') {
       let pow = sk.pow;
-      if (sk.first && B.turn === 1) { pow *= sk.first; await bmsg('初太刀！ チェストォォォッ！！', 600); }
+      if (sk.first && B.turn === 1) { pow *= sk.first; flashScreen('#fff'); await bmsg('初太刀！ チェストォォォッ！！', 600); }
       const ts = sk.target === 'enemies' ? B.es.filter(e => !e.dead) : [retarget(B, a.t)].filter(Boolean);
-      for (const e of ts) await hitEnemy(B, e, stat(m, 'atk'), pow, sk.sure);
+      for (let hit = 0; hit < (sk.hits || 1); hit++) for (const e of ts) if (!e.dead) await hitEnemy(B, e, stat(m, 'atk'), pow, sk.sure, sk.fx || (sk.first ? 'chest' : 'slash'));
+      if (sk.drain) { const v = Math.round(stat(m, 'atk') * sk.drain); m.hp = Math.min(mhp(m), m.hp + v); updateBStat(); }
     } else if (sk.type === 'heal') {
       const ts = sk.target === 'allies' ? G.party.map(id => G.mem[id]) : [G.mem[a.t]];
       for (const t of ts) {
-        if (t.hp <= 0) { await bmsg(`しかし ${t.name}は 倒れている……`); continue; }
+        if (t.hp <= 0) { if (sk.revive) { t.hp = Math.round(mhp(t) / 3); fxMember(t.id, 'heal'); SFX.play('heal'); updateBStat(); await bmsg(`${t.name}が 立ち上がった！`); } else await bmsg(`しかし ${t.name}は 倒れている……`); continue; }
         const v = Math.min(mhp(t) - t.hp, Math.round((sk.pow + m.lv * 3) * (.9 + Math.random() * .2)));
-        t.hp += v; SFX.play('heal'); updateBStat(); await bmsg(`${t.name}の HPが ${v} 回復した！`);
+        t.hp += v; SFX.play('heal'); fxMember(t.id, 'heal'); updateBStat(); await bmsg(`${t.name}の HPが ${v} 回復した！`, 600);
       }
-    }
+    } else if (sk.type === 'guard') { for (const id of G.party) B.defend[id] = true; SFX.play('buff'); G.party.forEach(id => fxMember(id, 'buff')); await bmsg('みんなの守りが 固くなった！'); }
+    else if (sk.type === 'kiup') { for (const t of aliveMembers()) { t.ki = Math.min(mki(t), t.ki + sk.pow); fxMember(t.id, 'ki'); } SFX.play('buff'); updateBStat(); await bmsg('みんなの気が みなぎった！'); }
   }
 }
 async function eAct(B, e) {
   let sk = null; for (const s of (e.d.skills || [])) if (Math.random() < s.p) { sk = s; break; }
   const atk = e.atk * (1 + .25 * e.buff);
-  if (!sk) { const t = pick(aliveMembers()); await bmsg(`${e.name}の 攻撃！`, 400); await hitMember(B, t, atk, 1); return; }
-  await bmsg(sk.msg.replace('{n}', e.name), 650);
-  if (sk.type === 'one') await hitMember(B, pick(aliveMembers()), atk, sk.pow);
+  if (e.d.flee && Math.random() < e.d.flee) { SFX.play('run'); e.dead = true; e.fled = true; await bmsg(`${e.name}は 逃げ出した！`); return; }
+  const ft = e.d.fx || 'hit';
+  if (!sk) { const t = pick(aliveMembers()); await bmsg(`${e.name}の 攻撃！`, 400); await hitMember(B, t, atk, 1, ft); return; }
+  await bmsg(sk.msg.replace('{n}', e.name), 700);
+  const sft = sk.fx || ft;
+  if (sk.type === 'one') await hitMember(B, pick(aliveMembers()), atk, sk.pow, sft);
   else if (sk.type === 'all' || sk.type === 'explode') {
-    if (sk.type === 'explode') { e.dead = true; e.hp = 0; SFX.play('boom'); }
-    for (const m of aliveMembers()) await hitMember(B, m, atk, sk.pow);
-  } else if (sk.type === 'buff') { if (e.buff < 2) { e.buff++; await bmsg(`${e.name}の 攻撃力が 上がった！`); } else await bmsg('しかし 何も起こらなかった。'); }
+    if (sk.type === 'explode') { e.dead = true; e.hp = 0; SFX.play('boom'); fxEnemy(e, 'boom'); }
+    for (const m of aliveMembers()) await hitMember(B, m, atk, sk.pow, sft);
+  } else if (sk.type === 'buff') { if (e.buff < 2) { e.buff++; fxEnemy(e, 'buff'); SFX.play('buff'); await bmsg(`${e.name}の 攻撃力が 上がった！`); } else await bmsg('しかし 何も起こらなかった。'); }
+  else if (sk.type === 'heal') { const v = Math.round(e.d.hp * sk.pow); e.hp = Math.min(e.d.hp, e.hp + v); fxEnemy(e, 'heal'); SFX.play('heal'); await bmsg(`${e.name}は 態勢を立て直した！`); }
+  else if (sk.type === 'kidrain') { for (const m of aliveMembers()) m.ki = Math.max(0, m.ki - sk.pow); updateBStat(); SFX.play('hurt'); await bmsg('みんなの気が 削がれた……'); }
 }
 async function victory(B) {
-  const exp = B.es.reduce((s, e) => s + e.d.exp, 0), gold = B.es.reduce((s, e) => s + e.d.gold, 0);
-  await bmsg('戦いに 勝った！', 900);
+  const won = B.es.filter(e => !e.fled), exp = won.reduce((s, e) => s + e.d.exp, 0), gold = won.reduce((s, e) => s + e.d.gold, 0);
+  bgm(null); SFX.play('win');
+  await bmsg('戦いに 勝った！', 1100);
   if (exp) await bmsg(`それぞれ ${exp} の 経験値を得た。`, 900);
-  if (gold) { G.money += gold; await bmsg(`${gold}文を 手に入れた。`, 900); }
+  if (gold) { G.money += gold; SFX.play('coin'); await bmsg(`${gold}文を 手に入れた。`, 900); }
+  for (const e of won) if (e.d.drop && Math.random() < e.d.drop[1]) { addItem(e.d.drop[0]); SFX.play('item'); await bmsg(`${e.name}は ${ITEMS[e.d.drop[0]].name}を 落としていった！`, 1000); }
   for (const id of G.party) {
     const m = G.mem[id]; if (m.hp <= 0) continue;
     m.exp += exp;
     while (m.exp >= expAt(m.lv + 1) && m.lv < 99) {
-      const oh = mhp(m), ok = mki(m), before = skillsOf(m);
+      const oh = mhp(m), ok = mki(m), oa = stat(m, 'atk'), od = stat(m, 'def'), before = skillsOf(m);
       m.lv++; m.hp += mhp(m) - oh; m.ki += mki(m) - ok; updateBStat();
-      SFX.play('lvup'); await bmsg(`${m.name}は レベル${m.lv}に 上がった！`, 1300);
-      for (const s of skillsOf(m)) if (!before.includes(s)) { SFX.play('learn'); await bmsg(`${m.name}は「${SKILLS[s].name}」を 覚えた！`, 1300); }
+      SFX.play('lvup'); fxMember(id, 'buff'); flashScreen('#ffe8a0');
+      await bmsg(`${m.name}は レベル${m.lv}に 上がった！\nHP+${mhp(m) - oh}　気+${mki(m) - ok}　攻+${stat(m, 'atk') - oa}　守+${stat(m, 'def') - od}`, 1600);
+      for (const s of skillsOf(m)) if (!before.includes(s)) { SFX.play('learn'); await bmsg(`${m.name}は「${SKILLS[s].name}」を 覚えた！`, 1400); }
     }
   }
 }
 
+// ---------- 合戦（軍と軍の戦い：兵力と士気） ----------
+async function kassen(def) {
+  hideDlg();
+  const prevScene = G.scene, prevBgm = Audio8.cur;
+  while (true) {
+    const lv = partyLv();
+    const K = G.K = {
+      def, turn: 1, us: { ...def.us, mt: def.us.troops, mm: 100, morale: def.us.morale || 100 }, them: { ...def.them, mt: def.them.troops, mm: 100, morale: def.them.morale || 100 },
+      used: {}, aim: 0, storm: 0, guard: false, fx: [], hitUs: 0, hitThem: 0, lv,
+    };
+    SFX.play('drum'); flashScreen(); await sleep(300);
+    G.scene = 'kassen'; bgm(def.bgm || 'war');
+    const top = place(el('div', 'win kbar'), 8, 4, 368); const msgE = place(el('div', 'win bmsg'), 8, 196, 368, 84);
+    const upd = () => {
+      const bar = (s, c) => `<div class="kside"><b>${esc(s.name)}</b><div>兵力 ${Math.max(0, Math.round(s.troops))}<div class="bar"><i style="width:${Math.max(0, s.troops / s.mt * 100)}%;background:${c}"></i></div></div><div>士気 ${Math.max(0, Math.round(s.morale))}<div class="bar"><i style="width:${Math.max(0, s.morale)}%;background:#ffd040"></i></div></div></div>`;
+      top.innerHTML = `<div class="ktitle">${esc(def.title)}　<span>${def.goal === 'survive' ? `あと ${Math.max(0, def.turns - K.turn + 1)} 刻 耐えよ` : `${K.turn} 刻目`}</span></div><div class="krow">${bar(K.us, '#6ab0ff')}${bar(K.them, '#ff7a6a')}</div>`;
+    };
+    const km = async (t, ms = 900) => { msgE.textContent = t; G.log.push({ n: '', t }); await waitOk(T(ms)); };
+    upd(); await km(def.intro || `${def.title}――！`, 1400);
+    let result = null;
+    while (!result) {
+      upd(); place(msgE, 112, 196, 264, 84); msgE.textContent = `${K.us.leader || '新八'}の 采配は？`;
+      const tac = (def.tactics || []).filter(t => !K.used[t.id]);
+      const c = await choose([{ label: def.attackName || '攻めかかる' }, { label: '守りを固める' }, { label: '鼓舞する' }, { label: '策を用いる', disabled: !tac.length }], { x: 8, y: 172, w: 100, cancel: false, onMove: j => msgE.textContent = ['敵の兵力と士気を削る', '受ける被害を半分にし、士気を少し回復', '味方の士気を大きく回復する', '一度だけ使える特別な策'][j] });
+      place(msgE, 8, 196, 368, 84);
+      K.guard = false;
+      const pw = (def.us.power + lv * 5) * (.6 + K.us.morale / 250);
+      if (c === 0) {
+        const dmg = Math.round(pw * (.8 + Math.random() * .4)), md = Math.round((6 + Math.random() * 4) * (K.aim ? 3 : 1));
+        K.them.troops -= dmg; K.them.morale -= md; K.hitThem = 20; SFX.play(def.usFx === 'gun' ? 'gun' : def.usFx === 'slash' ? 'slash' : 'boom'); shake();
+        await km(`${def.attackName || '攻めかかった'}！ 敵の兵 ${dmg} を討ち、士気を ${md} 削った！`);
+        if (K.aim) { K.aim = 0; await km('狙いすました一撃に、敵がひるんでいる！'); }
+      } else if (c === 1) { K.guard = true; K.us.morale = Math.min(100, K.us.morale + 6); SFX.play('buff'); await km('陣を固め、敵の攻めに備えた。'); }
+      else if (c === 2) { const v = 18 + Math.round(Math.random() * 8); K.us.morale = Math.min(100, K.us.morale + v); SFX.play('buff'); await km(`${def.rally || '「チェストォ！ 退くな、薩摩の意地を見せぇ！」'}\n味方の士気が ${v} 上がった！`, 1400); }
+      else if (c === 3) {
+        const j = await choose(tac.map(t => ({ label: t.name, right: '' })), { x: 112, y: 120, w: 260, onMove: k => msgE.textContent = tac[k].desc });
+        if (j >= 0) { const t = tac[j]; K.used[t.id] = 1; SFX.play('learn'); await km(t.msg, 1500); if (t.aim) K.aim = 1; if (t.storm) K.storm = t.storm; if (t.morale) K.them.morale -= t.morale; if (t.troops) K.them.troops -= t.troops; if (t.heal) K.us.troops = Math.min(K.us.mt, K.us.troops + t.heal); if (t.rally) K.us.morale = Math.min(100, K.us.morale + t.rally); }
+      }
+      upd();
+      if (K.them.troops <= 0 || K.them.morale <= 0) { result = 'win'; break; }
+      // 敵の番
+      const ev = def.events && def.events[K.turn];
+      if (ev) { await km(ev.msg, 1500); if (ev.us) K.us.troops -= ev.us; if (ev.um) K.us.morale -= ev.um; if (ev.tm) K.them.morale -= ev.tm; SFX.play(ev.sfx || 'boom'); shake(true); upd(); }
+      let dmg = Math.round((def.them.power) * (K.storm ? .55 : 1) * (.8 + Math.random() * .4) * (1 + (K.turn - 1) * .04));
+      if (K.guard) dmg = Math.round(dmg / 2);
+      const md = Math.round(dmg / (def.moraleDiv || 14));
+      K.us.troops -= dmg; K.us.morale -= md; K.hitUs = 20; SFX.play(def.themFx === 'gun' ? 'gun' : 'boom'); shake(true);
+      await km(`${def.themAttack || '敵の攻撃！'} 味方の兵 ${dmg} が倒れ、士気が ${md} 下がった！`);
+      if (K.storm) K.storm--;
+      upd();
+      if (K.us.troops <= 0 || K.us.morale <= 0) { result = 'lose'; break; }
+      K.turn++;
+      if (def.goal === 'survive' && K.turn > def.turns) { result = 'win'; break; }
+    }
+    top.remove(); msgE.remove();
+    if (result === 'win') {
+      G.scene = prevScene === 'kassen' ? 'map' : prevScene; G.K = null; Audio8.cur = null; if (prevBgm) bgm(prevBgm); SFX.play('win');
+      return 'win';
+    }
+    G.scene = prevScene; G.K = null;
+    bgm('sad');
+    const again = await pickOne(null, def.loseMsg || '味方の陣が崩れた……', null, ['もう一度 采配をふるう', 'ひとまず退く（最後の記録へ）'], { x: 120, y: 110, w: 250 });
+    if (again === 1) { Audio8.cur = null; throw GAMEOVER; }
+  }
+}
+function drawKassen() {
+  const K = G.K, d = K.def;
+  ctx.drawImage(bgImg(d.bg || 'field'), 0, 0);
+  const cnt = (s, max) => Math.max(0, Math.ceil(s.troops / s.mt * max));
+  const wob = Math.sin(G.frame / 10);
+  // 敵（奥）
+  const nT = cnt(K.them, 14);
+  for (let i = 0; i < nT; i++) {
+    const x = 260 + (i % 7) * 34 + (i >= 7 ? 16 : 0), y = 120 + (i >= 7 ? 30 : 0);
+    if (d.themUnit === 'ship') ctx.drawImage(tileImg('S', (G.frame >> 4) & 1, 0), x, y - 10);
+    else ctx.drawImage(charImg(d.themUnit || 'enemysoldier', 0, ((G.frame >> 4) + i) & 1), x, y - 30 + (K.hitThem > 0 ? (K.hitThem % 4) - 2 : 0));
+  }
+  // 味方（手前）
+  const nU = cnt(K.us, 14);
+  for (let i = 0; i < nU; i++) {
+    const x = 20 + (i % 7) * 34 + (i >= 7 ? 16 : 0), y = 238 - (i >= 7 ? 26 : 0);
+    if (d.usUnit === 'cannon') ctx.drawImage(tileImg('C', 0, 0), x, y - 16);
+    else ctx.drawImage(charImg(d.usUnit || 'satsumasoldier', 3, ((G.frame >> 4) + i) & 1), x, y - 40 + (K.hitUs > 0 ? (K.hitUs % 4) - 2 : 0));
+  }
+  if (K.hitThem > 0) { K.hitThem--; for (let k = 0; k < 4; k++) { ctx.fillStyle = k % 2 ? '#ffe080' : '#ff8a20'; ctx.beginPath(); ctx.arc(300 + Math.random() * 200, 100 + Math.random() * 60, 4 + Math.random() * 10, 0, 7); ctx.fill(); } }
+  if (K.hitUs > 0) { K.hitUs--; for (let k = 0; k < 4; k++) { ctx.fillStyle = k % 2 ? '#ffe080' : '#ff8a20'; ctx.beginPath(); ctx.arc(30 + Math.random() * 230, 200 + Math.random() * 40, 4 + Math.random() * 12, 0, 7); ctx.fill(); } }
+  if (d.bg === 'storm' || d.bg === 'rain') for (let i = 0; i < 8; i++) { const x = Math.random() * CW, y = Math.random() * CH; ctx.strokeStyle = 'rgba(200,210,230,.5)'; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - 4, y + 16); ctx.stroke(); }
+  ctx.fillStyle = '#f0ece0'; ctx.fillRect(24, 150 + wob, 2, 0);
+}
+
+// ---------- 立木打ち（タイミング遊び） ----------
+async function tachiki(rounds = 5) {
+  hideDlg();
+  const box = place(el('div', 'win tachiki'), 40, 100, 304, 92);
+  let score = 0;
+  for (let r = 0; r < rounds; r++) {
+    const zone = 40 + Math.random() * 40, zw = 14 - r * 1.5;
+    let pos = 0, dir = 1, hit = null;
+    const spd = 1.6 + r * .5;
+    await new Promise(res => {
+      const h = { tap: true, onKey(k) { if (k === 'ok') { hit = pos; UI.pop(h); res(); } } };
+      UI.push(h);
+      const tick = () => {
+        if (hit !== null) return;
+        pos += dir * spd; if (pos > 100 || pos < 0) dir *= -1;
+        box.innerHTML = `<div class="ttl">立木打ち　${r + 1} / ${rounds}本目　（Aで打つ）</div><div class="tk"><i class="z" style="left:${zone}%;width:${zw}%"></i><i class="c" style="left:${pos}%"></i></div><div class="tks">命中 ${score}</div>`;
+        requestAnimationFrame(tick);
+      };
+      tick();
+    });
+    const ok = hit >= zone - 1 && hit <= zone + zw + 1;
+    if (ok) { score++; SFX.play('chest'); flashScreen(); } else SFX.play('miss');
+    box.querySelector('.tks').textContent = ok ? 'チェストォッ！ 見事！' : '……外れた';
+    await sleep(600);
+  }
+  box.remove();
+  return score;
+}
+
 // ---------- セーブ・タイトル ----------
-const SAVE_KEY = 'satsuma-homura-v1';
-function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify({ party: G.party, mem: G.mem, inv: G.inv, money: G.money, flags: G.flags, chapter: G.chapter, mapId: G.mapId, px: G.px, py: G.py, dir: G.dir })); return true; } catch (e) { return false; } }
+const SAVE_KEY = 'nihonkoku-kagoshima-v2';
+function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify({ party: G.party, mem: G.mem, inv: G.inv, money: G.money, flags: G.flags, chapter: G.chapter, mapId: G.mapId === '_room' ? G.ret.map : G.mapId, px: G.mapId === '_room' ? G.ret.x : G.px, py: G.mapId === '_room' ? G.ret.y : G.py, dir: G.dir, dex: G.dex, ride: false, playTime: G.playTime })); seriesUpdate(); return true; } catch (e) { return false; } }
 function loadData() { try { const s = localStorage.getItem(SAVE_KEY); return s ? JSON.parse(s) : null; } catch (e) { return null; } }
-function applySave(d) { Object.assign(G, { party: d.party, mem: d.mem, inv: d.inv, money: d.money, flags: d.flags, chapter: d.chapter }); enterMap(d.mapId, d.px, d.py, d.dir); }
-function newGame() { G.party = ['shinpachi']; G.mem = { shinpachi: mkMember('shinpachi', 1) }; G.inv = { karaimo: 3 }; G.money = 20; G.flags = {}; G.chapter = 0; enterMap('kajiya', 4, 11, 0); }
+function applySave(d) { Object.assign(G, { party: d.party, mem: d.mem, inv: d.inv, money: d.money, flags: d.flags, chapter: d.chapter, dex: d.dex || { p: {}, e: {}, l: {}, end: {} }, ride: false, playTime: d.playTime || 0 }); enterMap(d.mapId, d.px, d.py, d.dir); }
+function newGame() { G.party = ['shinpachi']; G.mem = { shinpachi: mkMember('shinpachi', 1) }; G.inv = { karaimo: 3 }; G.money = 30; G.flags = {}; G.chapter = 0; G.dex = { p: {}, e: {}, l: {}, end: {} }; G.log = []; G.playTime = 0; G.ride = false; enterMap('kajiya', 4, 11, 0); }
 async function gameOver() {
-  await fadeOut(); G.scene = 'title'; hideDlg();
+  await fadeOut(); G.scene = 'title'; hideDlg(); bgm('sad');
   await card('力尽きた……', '最後に記録した場所から やり直します');
   const d = loadData();
   if (d) applySave(d); else newGame();
   restAll(); await fadeIn();
 }
 async function title() {
-  G.scene = 'title'; G.map = null;
-  const t = el('div', 'title'); t.innerHTML = '<div class="tt">薩摩の焔</div><div class="ts">〜西郷と大久保、二つの星を見た少年の記録〜</div><div class="tv">序章・第一章 体験版 v0.1</div>';
+  G.scene = 'title'; G.map = null; G.weather = 'embers'; bgm('title');
+  const t = el('div', 'title'); t.innerHTML = '<div class="tser">日本國物語</div><div class="tt">薩摩の焔</div><div class="ts">〜二つの星を見た少年〜</div><div class="tv">鹿児島編　v1.0</div><div class="tap">画面をタッチすると 音が鳴ります</div>';
   const has = !!loadData();
-  const i = await choose(['はじめから', { label: 'つづきから', disabled: !has }], { x: 142, y: 196, w: 100, cancel: false, start: has ? 1 : 0 });
-  await fadeOut(); t.remove();
-  if (i === 0) newGame(); else applySave(loadData());
-  if (i === 0) run(STORY.opening); else await fadeIn();
+  while (true) {
+    const i = await choose(['はじめから', { label: 'つづきから', disabled: !has }, '設定', '日本國物語 トップへ'], { x: 132, y: 196, w: 120, cancel: false, start: has ? 1 : 0 });
+    if (i === 2) { await settings(); continue; }
+    if (i === 3) { location.href = '../'; return; }
+    await fadeOut(); t.remove(); setWeather(null);
+    if (i === 0) { newGame(); run(STORY.opening); } else { applySave(loadData()); await fadeIn(); }
+    return;
+  }
 }
-
 function fit() {
-  const pad = $('#pad'), padH = pad.offsetHeight || 0;
-  const k = Math.max(1, Math.min(innerWidth / SW, (innerHeight - padH) / SH));
+  const pad = $('#pad'), land = innerWidth > innerHeight * 1.15, touch = matchMedia('(pointer: coarse)').matches;
+  document.body.classList.toggle('land', land && touch); document.body.classList.toggle('touch', touch);
+  const st = $('#stick'), slot = land ? $('#padL') : $('#stickSlot'); if (st && slot && st.parentNode !== slot) slot.appendChild(st);
+  const padH = touch && !land ? (pad.offsetHeight || 200) : 0, padW = touch && land ? 340 : 0;
+  const k = Math.min((innerWidth - padW) / SW, (innerHeight - padH) / SH);
   screenEl.style.transform = `scale(${k})`;
   const h = $('#holder'); h.style.width = SW * k + 'px'; h.style.height = SH * k + 'px';
 }
 addEventListener('resize', fit);
-addEventListener('load', () => { fit(); title(); loop(); });
+addEventListener('load', () => { Audio8.vol.bgm = OPT.bgm; Audio8.vol.sfx = OPT.sfx; fit(); updateHud(); title(); loop(); });
