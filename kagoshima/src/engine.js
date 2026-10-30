@@ -20,7 +20,7 @@ function addPt(k, n = 1) { G.flags[k] = pts(k) + n; }
 
 // ---------- 設定（この端末だけに保存） ----------
 const OPT_KEY = 'nihonkoku-opt';
-const OPT = Object.assign({ lang: 'kago', text: 2, speed: 1, auto: false, bgm: .5, sfx: .8, mini: true }, (() => { try { return JSON.parse(localStorage.getItem(OPT_KEY)) || {}; } catch (e) { return {}; } })());
+const OPT = Object.assign({ lang: 'kago', text: 2, speed: 1, auto: false, bgm: .5, sfx: .8, mini: true, padA: true }, (() => { try { return JSON.parse(localStorage.getItem(OPT_KEY)) || {}; } catch (e) { return {}; } })());
 function saveOpt() { try { localStorage.setItem(OPT_KEY, JSON.stringify(OPT)); } catch (e) { } Audio8.vol.bgm = OPT.bgm; Audio8.vol.sfx = OPT.sfx; Audio8.setVol(); updateHud(); }
 const T = ms => ms / OPT.speed;
 const SFX = { play: n => Audio8.sfx(n) };
@@ -51,19 +51,23 @@ document.querySelectorAll('[data-k]').forEach(b => {
 (() => {
   const zone = $('#stick'), knob = $('#stickKnob'); if (!zone) return;
   const arw = { up: zone.querySelector('.u'), down: zone.querySelector('.d'), left: zone.querySelector('.l'), right: zone.querySelector('.r') };
-  let id = null;
+  let id = null, tapA = false, t0 = 0;   // 真ん中をトンと押して離す＝A（ドラッグしたら移動だけ）
   const at = e => {
     const r = zone.getBoundingClientRect(); let dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
     if (document.body.classList.contains('rot')) [dx, dy] = [dy, -dx];   // 横向き表示中は画面ごと90度回っている
     const R = zone.offsetWidth / 2, dist = Math.hypot(dx, dy), m = Math.min(dist, R * .42);
     knob.style.transform = `translate(calc(-50% + ${dist ? dx / dist * m : 0}px), calc(-50% + ${dist ? dy / dist * m : 0}px))`;
     const k = dist < 12 ? null : Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+    if (k) tapA = false;
     for (const d in arw) arw[d].classList.toggle('on', d === k);
     Input.setStick(k);
   };
-  zone.addEventListener('pointerdown', e => { e.preventDefault(); Audio8.unlock(); id = e.pointerId; zone.setPointerCapture(id); at(e); });
+  zone.addEventListener('pointerdown', e => { e.preventDefault(); Audio8.unlock(); id = e.pointerId; zone.setPointerCapture(id); tapA = true; t0 = Date.now(); at(e); if (tapA) knob.classList.add('on'); });
   zone.addEventListener('pointermove', e => { if (e.pointerId === id) at(e); });
-  const end = e => { if (e.pointerId !== id) return; id = null; knob.style.transform = 'translate(-50%,-50%)'; for (const d in arw) arw[d].classList.remove('on'); Input.setStick(null); };
+  const end = e => {
+    if (e.pointerId !== id) return; id = null; knob.classList.remove('on');
+    if (tapA && OPT.padA !== false && e.type === 'pointerup' && Date.now() - t0 < 600) { Input.down('ok'); Input.up('ok'); }
+    knob.style.transform = 'translate(-50%,-50%)'; for (const d in arw) arw[d].classList.remove('on'); Input.setStick(null); };
   zone.addEventListener('pointerup', end); zone.addEventListener('pointercancel', end);
 })();
 $('#screen').addEventListener('pointerdown', e => { Audio8.unlock(); const h = UI.top(); if (h && h.tap) { e.preventDefault(); Input.q.push('ok'); } });
@@ -609,11 +613,11 @@ async function settings() {
   while (true) {
     const items = [
       { label: '言葉', right: LANG[OPT.lang] }, { label: '文字の速さ', right: TXT[OPT.text] }, { label: '会話・戦闘の速さ', right: '×' + OPT.speed },
-      { label: 'オート送り', right: OPT.auto ? 'ON' : 'OFF' }, { label: 'BGM', right: Math.round(OPT.bgm * 10) }, { label: '効果音', right: Math.round(OPT.sfx * 10) }, { label: 'ミニマップ', right: OPT.mini ? '表示' : '非表示' }, { label: '画面の向き', right: OPT.rot ? '横向きで表示' : '端末に合わせる' }, { label: '閉じる' },
+      { label: 'オート送り', right: OPT.auto ? 'ON' : 'OFF' }, { label: 'BGM', right: Math.round(OPT.bgm * 10) }, { label: '効果音', right: Math.round(OPT.sfx * 10) }, { label: 'ミニマップ', right: OPT.mini ? '表示' : '非表示' }, { label: '画面の向き', right: OPT.rot ? '横向きで表示' : '端末に合わせる' }, { label: 'パッドの真ん中でA', right: OPT.padA !== false ? 'ON' : 'OFF' }, { label: '閉じる' },
     ];
     const cyc = (k, list) => { const j = list.indexOf(OPT[k]); OPT[k] = list[(j + 1) % list.length]; };
     i = await choose(items, { x: 96, y: 40, w: 200, start: i, title: '設定' });
-    if (i < 0 || i === 8) break;
+    if (i < 0 || i === 9) break;
     if (i === 0) cyc('lang', ['kago', 'std', 'both']);
     if (i === 1) OPT.text = (OPT.text + 1) % 4;
     if (i === 2) cyc('speed', [1, 3, 5]);
@@ -622,6 +626,7 @@ async function settings() {
     if (i === 5) { OPT.sfx = Math.round(((OPT.sfx * 10 + 1) % 11)) / 10; }
     if (i === 6) OPT.mini = !OPT.mini;
     if (i === 7) { OPT.rot = !OPT.rot; setTimeout(fit, 50); }
+    if (i === 8) OPT.padA = OPT.padA === false;
     saveOpt(); if (i === 5) SFX.play('ok');
   }
   G.setOpen = false;
@@ -1307,10 +1312,10 @@ async function gameOver() {
 }
 async function title() {
   G.scene = 'title'; G.map = null; G.weather = 'embers'; bgm('title');
-  const t = el('div', 'title'); t.innerHTML = '<div class="tser">日本國物語</div><div class="tt">薩摩の焔</div><div class="ts">〜二つの星を見た少年〜</div><div class="tv">鹿児島編　v1.0</div><div class="tap">画面をタッチすると 音が鳴ります</div>';
+  const t = el('div', 'title'); t.innerHTML = '<div class="tser">日本國物語</div><div class="tt">薩摩の焔</div><div class="ts">〜二つの星を見た少年〜</div><div class="tv">鹿児島編　v1.0</div>';
   const has = !!loadData();
   while (true) {
-    const i = await choose(['はじめから', { label: 'つづきから', disabled: !has }, '設定', '日本國物語 トップへ'], { x: 132, y: 196, w: 120, cancel: false, start: has ? 1 : 0 });
+    const i = await choose(['はじめから', { label: 'つづきから', disabled: !has }, '設定', '日本國物語 トップへ'], { x: 112, y: 192, w: 160, cancel: false, start: has ? 1 : 0 });
     if (i === 2) { await settings(); continue; }
     if (i === 3) { location.href = '../'; return; }
     await fadeOut(); t.remove(); setWeather(null);
