@@ -608,7 +608,9 @@ async function showFullMap() {
   for (const n of npcs()) if (n.mark) P(x, n.x * s, n.y * s, s, s, '#ffd040');
   P(x, G.px * s - 1, G.py * s - 1, s + 2, s + 2, '#ff2a2a');
   const p = panel(`<div class="ttl">${esc(m.name)}</div>`, 8, 8, 368, 272, 'fullmap'); p.appendChild(c);
-  for (const l of (m.labels || [])) { const t = el('div', 'lbl', p); t.textContent = l[2]; t.style.left = (12 + l[0] * s * (c.offsetWidth / c.width || 1)) + 'px'; t.style.top = (30 + l[1] * s * (c.offsetHeight / c.height || 1)) + 'px'; }
+  // 地名は、実際に表示された地図の位置と大きさから、そのマスの真ん中に置く
+  const kx = c.offsetWidth / c.width || 1, ky = c.offsetHeight / c.height || 1;
+  for (const l of (m.labels || [])) { const t = el('div', 'lbl', p); t.textContent = l[2]; t.style.left = (c.offsetLeft + (l[0] + .5) * s * kx) + 'px'; t.style.top = (c.offsetTop + (l[1] + .5) * s * ky) + 'px'; }
   const g = el('div', 'goal', p); g.textContent = '目的：' + (typeof GOAL === 'function' ? GOAL() : '');
   await waitOk(); p.remove();
 }
@@ -789,7 +791,7 @@ async function skillMenu() {
   const m = G.mem[tid], sks = skillsOf(m);
   if (!sks.length) { await N(`${m.name}は まだ わざを覚えていない。`); return; }
   const d = descBox();
-  const i = await choose(sks.map(k => ({ label: SKILLS[k].name, right: '気' + SKILLS[k].ki, disabled: SKILLS[k].type !== 'heal' || m.ki < SKILLS[k].ki })), { x: 116, y: 8, w: 236, maxH: 222, onMove: k => d.textContent = skillDesc(sks[k]) });
+  const i = await choose(sks.map(k => ({ label: (skillEl(SKILLS[k]) ? '〔' + skillEl(SKILLS[k]) + '〕' : '') + SKILLS[k].name, right: '気' + SKILLS[k].ki, disabled: SKILLS[k].type !== 'heal' || m.ki < SKILLS[k].ki })), { x: 116, y: 8, w: 236, maxH: 222, onMove: k => d.textContent = skillDesc(sks[k]) });
   d.remove(); if (i < 0) return;
   const sk = SKILLS[sks[i]];
   const targets = sk.target === 'allies' ? G.party : [await pickMember({ x: 200, y: 72, w: 176 })];
@@ -798,12 +800,22 @@ async function skillMenu() {
   for (const t of targets) { const x = G.mem[t]; if (x.hp <= 0) continue; const v = Math.min(mhp(x) - x.hp, Math.round(sk.pow + m.lv * 3)); x.hp += v; await N(`${x.name}の HPが ${v} 回復した！`); }
   SFX.play('heal');
 }
+// 五行の相性の図（図鑑から見られる）。矢印の先が「剋たれる」側
+async function gogyoChart() {
+  const c = mk(220, 200), x = c.getContext('2d'), E = ['木', '火', '土', '金', '水'], pos = E.map((e, i) => [110 + Math.sin(i / 5 * Math.PI * 2) * 76, 104 - Math.cos(i / 5 * Math.PI * 2) * 76]);
+  x.strokeStyle = '#ff8a6a'; x.fillStyle = '#ff8a6a'; x.lineWidth = 2;
+  E.forEach((e, i) => { const j = E.indexOf(KOKU[e]), [ax, ay] = pos[i], [bx, by] = pos[j], d = Math.hypot(bx - ax, by - ay), ux = (bx - ax) / d, uy = (by - ay) / d, sx = ax + ux * 22, sy = ay + uy * 22, ex = bx - ux * 24, ey = by - uy * 24;
+    x.beginPath(); x.moveTo(sx, sy); x.lineTo(ex, ey); x.stroke(); x.beginPath(); x.moveTo(ex, ey); x.lineTo(ex - ux * 9 - uy * 5, ey - uy * 9 + ux * 5); x.lineTo(ex - ux * 9 + uy * 5, ey - uy * 9 - ux * 5); x.fill(); });
+  E.forEach((e, i) => { const [px, py] = pos[i]; x.fillStyle = '#10163a'; x.beginPath(); x.arc(px, py, 19, 0, 7); x.fill(); x.strokeStyle = EL_COL[e]; x.lineWidth = 2; x.stroke(); x.fillStyle = EL_COL[e]; x.font = 'bold 20px DotGothic16, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(e, px, py + 1); });
+  const p = panel(`<div class="ttl">五行の相性</div><div class="gogyo"></div><div class="bio">矢印は「剋つ」向き。木は土に、土は水に、水は火に、火は金に、金は木に剋つ。<br>剋つ属性で攻めると <b>1.5倍</b>、逆だと <b>0.8倍</b>。<br>刀＝金、銃・砲＝火、牙＝木、打つ・投げる＝土、水のわざもある。<br>敵の足もとの字と、わざの名前の〔 〕が属性。</div>`, 8, 8, 368, 272);
+  p.querySelector('.gogyo').appendChild(c); await waitOk(); p.remove();
+}
 async function dexMenu() {
   let tab = 0;
   while (true) {
     const np = Object.keys(DEX.people).length, ne = DEX.events.length, nl = Object.keys(DEX.places).length;
     const cnt = o => Object.keys(o).length;
-    tab = await choose([{ label: '人物', right: `${cnt(G.dex.p)}/${np}` }, { label: '年表', right: `${cnt(G.dex.e)}/${ne}` }, { label: 'ゆかりの地', right: `${cnt(G.dex.l)}/${nl}` }, { label: '全国のつながり', right: Object.keys(linkedPrefs()).length + '県' }, { label: '結末', right: `${cnt(G.dex.end)}/${DEX.endings.length}` }], { x: 116, y: 8, w: 220, title: '図鑑', start: tab });
+    tab = await choose([{ label: '人物', right: `${cnt(G.dex.p)}/${np}` }, { label: '年表', right: `${cnt(G.dex.e)}/${ne}` }, { label: 'ゆかりの地', right: `${cnt(G.dex.l)}/${nl}` }, { label: '全国のつながり', right: Object.keys(linkedPrefs()).length + '県' }, { label: '結末', right: `${cnt(G.dex.end)}/${DEX.endings.length}` }, { label: '五行の相性' }], { x: 116, y: 8, w: 220, title: '図鑑', start: tab });
     if (tab < 0) return;
     if (tab === 0) {
       const ids = Object.keys(DEX.people); let last = 0;
@@ -831,6 +843,7 @@ async function dexMenu() {
       const p = panel(`<div class="ttl">全国のつながり</div><div class="bio">この物語で出会った、鹿児島県の外の人物・出来事・場所です。日本國物語の別の作品で、また出会うかもしれません。</div>${keys.length ? keys.map(k => `<div class="lk"><b>${esc(k)}</b>　${L[k].map(esc).join('、')}</div>`).join('') : '<div class="lk">まだ つながりはない</div>'}`, 8, 8, 368, 272, 'scrollp');
       await waitOk(); p.remove();
     }
+    if (tab === 5) await gogyoChart();
     if (tab === 4) {
       const p = panel(`<div class="ttl">結末</div>${DEX.endings.map(e => `<div class="lk">${G.dex.end[e.id] ? `<b>${esc(e.name)}</b>　${esc(e.desc)}` : '？？？？？'}</div>`).join('')}<div class="bio"><br>西南戦争での選択と、新八の心（情と理）、仙吉との絆で結末が変わります。</div>`, 8, 8, 368, 272, 'scrollp');
       await waitOk(); p.remove();
@@ -968,7 +981,7 @@ function updateBStat() {
     e.classList.toggle('dead', m.hp <= 0); e.classList.toggle('act', B.actIdx === i); e.classList.toggle('low', m.hp > 0 && m.hp < mhp(m) / 4);
     const hp = Math.max(0, m.hp / mhp(m)), ki = Math.max(0, m.ki / Math.max(1, mki(m)));
     const pb = B.pb[id], chips = ['atk', 'def', 'spd'].filter(k => pst(id, k)).map(k => pst(id, k) > 0 ? `<i class="up">${ST_MARK[k]}↑</i>` : `<i class="dn">${ST_MARK[k]}↓</i>`).join('') + (pb && pb.regen && pb.regen.t > 0 ? '<i class="rg">癒</i>' : '') + (pb && pb.bleed && pb.bleed.t > 0 ? '<i class="dn">血</i>' : '');
-    e.innerHTML = `<div class="bn">${esc(m.name)}${chips ? `<em class="chips">${chips}</em>` : ''}<span>Lv${m.lv}</span></div><div>HP <b>${m.hp}</b><small>/${mhp(m)}</small></div><div class="bar"><i style="width:${hp * 100}%"></i></div><div>気 <b>${m.ki}</b><small>/${mki(m)}</small></div><div class="bar ki"><i style="width:${ki * 100}%"></i></div>`;
+    e.innerHTML = `<div class="bn"><span class="nmx">${esc(m.name)}<i class="elc" style="color:${EL_COL[HEROES[id].el]}">${HEROES[id].el}</i></span>${chips ? `<em class="chips">${chips}</em>` : ''}<span>Lv${m.lv}</span></div><div>HP <b>${m.hp}</b><small>/${mhp(m)}</small></div><div class="bar"><i style="width:${hp * 100}%"></i></div><div>気 <b>${m.ki}</b><small>/${mki(m)}</small></div><div class="bar ki"><i style="width:${ki * 100}%"></i></div>`;
   });
 }
 function hurtFlash(id) { const i = G.party.indexOf(id); const e = G.B && G.B.statEls[i]; if (e) { e.classList.remove('hurt'); void e.offsetWidth; e.classList.add('hurt'); } }
@@ -1035,7 +1048,7 @@ async function inputCommands(B) {
     if (c === 1) {
       const sks = skillsOf(m);
       if (!sks.length) { B.msgEl.textContent = 'まだ わざを覚えていない。'; await waitOk(900); continue; }
-      const k = await choose(sks.map(s => ({ label: SKILLS[s].name, right: '気' + SKILLS[s].ki, disabled: m.ki < SKILLS[s].ki })), { x: 112, y: 52, w: 236, maxH: 138, onMove: j => B.msgEl.textContent = skillDesc(sks[j]) });
+      const k = await choose(sks.map(s => ({ label: (skillEl(SKILLS[s]) ? '〔' + skillEl(SKILLS[s]) + '〕' : '') + SKILLS[s].name, right: '気' + SKILLS[s].ki, disabled: m.ki < SKILLS[s].ki })), { x: 112, y: 52, w: 236, maxH: 138, onMove: j => B.msgEl.textContent = skillDesc(sks[j]) });
       if (k < 0) continue;
       const sk = SKILLS[sks[k]]; let t = null;
       if (sk.target === 'enemy') { t = await pickEnemy(B); if (t < 0) continue; }

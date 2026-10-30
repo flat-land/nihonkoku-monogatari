@@ -7,6 +7,8 @@ Object.assign(PEOPLE, {
   gonbe: { name: '権兵衛', spr: { body: '#2f5a7a', body2: '#c8b48a', skin: '#c88a5a', cloth: 'kimono', hat: 'hachimaki', hatc: '#e8e0d0', beard: '#2a1a10', big: true }, por: { style: 'short', fw: 8.2, brow: 2, eye: 'normal', skin: '#c88a5a', cloth: '#2f5a7a', beard: 'stubble', mouth: 'smile', bg: '#1e3a4a' } },
   gensai: { name: '玄斎', spr: { body: '#2a2a3a', body2: '#3a3a4a', cloth: 'kimono', hs: 'bald', eyes: 'closed', beard: '#8a8a8a' }, por: { style: 'bald', fw: 6.8, eye: 'gentle', cloth: '#2a2a3a', glasses: true, beard: 'mustache', bg: '#2a3a34', hair: '#8a8a8a' } },
   tetsu: { name: '鉄之進', spr: { body: '#2a3a2a', body2: '#3a3428', cloth: 'hakama', hs: 'spiky', hat: 'hachimaki', hatc: '#c02020', brow: 2 }, por: { style: 'mage', fw: 7.5, brow: 3, eye: 'sharp', cloth: '#2a3a2a', mouth: 'firm', bg: '#2a3428' } },
+  torikashira: { name: '捕り方の頭', spr: { body: '#2a2a2a', body2: '#2a2a2a', cloth: 'hakama', hat: 'jingasa', sword: true, brow: 2 }, por: { fw: 7.5, brow: 3, eye: 'sharp', cloth: '#2a2a2a', hat: 'jingasa' } },
+  henmi: { name: '辺見十郎太', spr: { body: '#3a2a22', body2: '#2a2a2a', cloth: 'hakama', hs: 'short', sword: true, big: true, brow: 2 }, por: { style: 'short', fw: 8, brow: 3, eye: 'sharp', cloth: '#3a2a22', mouth: 'firm', bg: '#2a1a1a' } },
   crane: { name: '鶴', spr: { kind: 'crane' } },
   kannushi: { name: '神主', spr: { body: '#f0ece0', body2: '#6a5aa0', cloth: 'robe', hat: 'eboshi', eyes: 'closed' }, por: { fw: 7, eye: 'gentle', cloth: '#f0ece0', hat: 'eboshi' } },
   miko: { name: '巫女', spr: { body: '#f4f0e8', body2: '#c02020', cloth: 'hakama', hs: 'woman' }, por: { style: 'woman', fw: 6.3, cloth: '#f4f0e8' } },
@@ -102,7 +104,7 @@ for (const id of ['kagemono', 'sanzoku', 'oihagi', 'ronin', 'yamabushi', 'shugen
 // 出る時期に合わせた強さ（L）。章ごとの目安
 function fieldL(add = 0) { return (({ 0: 3, 1: 8, 2: 12, 3: 16, 8: 31 })[G.chapter] ?? Math.max(3, G.chapter * 4)) + add; }
 // 寄り道の頭や神主には、会話の顔絵を出さない（モブ扱い）
-for (const id of ['kannushi', 'miko', 'sanzokuB', 'kaizokuB', 'nukeniB', 'onmitsuB', 'sekimori']) MOBS.add(id);
+for (const id of ['torikashira', 'kannushi', 'miko', 'sanzokuB', 'kaizokuB', 'nukeniB', 'onmitsuB', 'sekimori']) MOBS.add(id);
 HI_HAIR.tetsu = 'spiky';
 
 Object.assign(ENC, {

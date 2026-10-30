@@ -92,20 +92,21 @@ Object.assign(MAPS, {
   // ---------------- 知覧（武家屋敷の町） ----------------
   chiran: {
     build() {
+      // 知覧：三本分の広い通りの両側に、石垣と生垣。北の家は通りへ、南の家は裏の小道へ戸が開く
       const g = grid(30, 22, '.'); border(g, 'T');
-      rect(g, 0, 11, 30, 1, ','); g[11][29] = 'T';
-      rect(g, 1, 10, 28, 1, '#'); rect(g, 1, 12, 28, 1, '#'); rect(g, 1, 9, 28, 1, 'g'); rect(g, 1, 13, 28, 1, 'g');
-      const H = [house(g, 3, 5, 5, 5), house(g, 10, 5, 5, 12), house(g, 18, 5, 6, 20), house(g, 25, 5, 4, 26), house(g, 3, 14, 5, 5), house(g, 10, 14, 5, 12)];
-      for (const [hx, hy] of H) { if (hy === 7) rect(g, hx, 8, 1, 3, ','); else rect(g, hx, 12, 1, 2, ','); }
+      rect(g, 0, 10, 29, 3, ','); g[11][0] = ',';
+      rect(g, 1, 8, 28, 1, 'g'); rect(g, 1, 9, 28, 1, '#'); rect(g, 1, 13, 28, 1, '#'); rect(g, 1, 14, 28, 1, 'g');
+      const H = [house(g, 3, 4, 5, 5), house(g, 10, 4, 5, 12), house(g, 18, 4, 6, 20), house(g, 25, 4, 3, 26), house(g, 3, 15, 5, 5), house(g, 10, 15, 5, 12)];
+      for (const [hx, hy] of H.slice(0, 4)) rect(g, hx, hy + 1, 1, 3, ',');
+      // 南へ下りる石段と、裏の小道
+      rect(g, 16, 13, 2, 2, ','); rect(g, 16, 15, 2, 6, ','); rect(g, 1, 18, 17, 1, ',');
       // 庭園：白砂、石、松、池
-      rect(g, 17, 14, 11, 6, 's'); rect(g, 20, 16, 4, 2, '~'); dots(g, 'R', [[18, 15], [25, 15], [26, 18], [18, 19]]); dots(g, 'P', [[17, 14], [27, 14], [24, 19], [19, 17]]);
-      rect(g, 17, 12, 2, 2, ','); g[13][17] = ','; g[12][17] = ',';
-      rect(g, 2, 18, 12, 3, 'F');
-      dots(g, 'T', [[2, 2], [8, 2], [16, 2], [23, 2], [28, 3], [15, 17], [14, 20]]);
-      const T = (id) => (n) => STORY.talk(id, n);
+      rect(g, 19, 15, 9, 6, 's'); rect(g, 21, 17, 4, 2, '~'); dots(g, 'R', [[19, 16], [26, 16], [27, 19]]); dots(g, 'P', [[19, 15], [27, 15], [25, 20], [20, 19]]); rect(g, 18, 16, 1, 3, 's');
+      rect(g, 2, 19, 12, 2, 'F');
+      dots(g, 'T', [[2, 2], [8, 2], [16, 2], [24, 2], [28, 3], [15, 5], [15, 16]]);
       return {
         name: '知覧', g, place: 'chiran', bgm: 'town', noRide: true,
-        labels: [[5, 5, '武具屋'], [12, 5, '道具屋'], [20, 5, '柚の家'], [5, 14, '宿'], [12, 14, '茶屋'], [22, 14, '庭園'], [0, 11, '野山へ']],
+        labels: [[5, 4, '武具屋'], [12, 4, '道具屋'], [20, 4, '柚の家'], [5, 15, '宿'], [12, 15, '茶屋'], [22, 15, '庭園'], [0, 11, '野山へ']],
         warps: [{ x: 0, y: 11, to: 'satsuma', x2: 16, y2: 32, dir: 0 }],
         houses: [
           hs(...H[0], '武具屋', { kind: 'shop', npcs: [npc(5, 3, 'merchant', () => shopTalk('chiran'))] }),
@@ -116,10 +117,10 @@ Object.assign(MAPS, {
           hs(...H[5], '茶屋', { npcs: [npc(5, 4, 'woman', () => STORY3.chiranChaya())] }),
         ],
         npcs: [
-          npc(20, 11, 'oyuzu', () => STORY3.oyuzu(), { cond: () => !F('oyuzu'), mark: true }),
-          npc(8, 11, 'elder', () => STORY3.line('chiranElder')), npc(26, 11, 'child', () => STORY3.line('chiranKid')), npc(6, 19, 'woman', () => STORY3.line('chiranTea'), { dir: 3 }),
-          { x: 16, y: 13, spr: 'sign', talk: () => N('立て札：「この先 庭園。\n石と砂と刈り込みで、山や海をあらわす」') },
-          pot(27, 18, 'ch2', 'kokuto'), chest(1, 20, 'ch3', 'naginata2'),
+          npc(22, 10, 'oyuzu', () => STORY3.oyuzu(), { cond: () => !F('oyuzu'), mark: true }),
+          npc(8, 12, 'elder', () => STORY3.line('chiranElder')), npc(26, 12, 'child', () => STORY3.line('chiranKid')), npc(1, 20, 'woman', () => STORY3.line('chiranTea'), { dir: 2 }),
+          { x: 18, y: 13, spr: 'sign', talk: () => N('立て札：「南へ下りると 庭園と宿・茶屋。\n石と砂と刈り込みで、山や海をあらわす」') },
+          pot(28, 20, 'ch2', 'kokuto'), chest(1, 17, 'ch3', 'naginata2'),
         ],
       };
     },
@@ -156,14 +157,14 @@ Object.assign(MAPS, {
       rect(g, 21, 1, 7, 2, 'H'); rect(g, 21, 3, 7, 1, 'h'); _BLD.push({ x: 21, y: 1, w: 7, door: 24, style: 'jinja' }); rect(g, 24, 4, 1, 4, ',');
       dots(g, 'l', [[23, 4], [25, 4]]);
       // 岩風呂
-      rect(g, 4, 11, 5, 2, 'O'); rect(g, 17, 10, 4, 3, 'O'); dots(g, 'R', [[22, 15], [3, 16], [26, 16]]);
+      rect(g, 7, 10, 5, 2, 'O'); rect(g, 17, 10, 4, 3, 'O'); dots(g, 'R', [[22, 15], [3, 16], [26, 16]]);
       dots(g, 'P', [[9, 14], [19, 15], [27, 14], [1, 15]]);
       rect(g, 22, 18, 1, 3, 'p');
-      dots(g, 'T', [[19, 2], [28, 5], [20, 6], [8, 10], [27, 10]]);
+      dots(g, 'T', [[19, 2], [28, 5], [20, 6], [27, 10]]);
       return {
         name: '指宿', g, place: 'ibusuki', bgm: () => F('kaizoku') && !F('kaizokuDone') ? 'war' : 'town', noRide: true,
-        props: [{ x: 23, y: 5, img: 'torii' }, { x: 4, y: 11, img: 'onsen', w: 5, h: 2 }, { x: 17, y: 10, img: 'onsen', w: 4, h: 3 }],
-        labels: [[4, 3, '湯治宿'], [10, 3, '浜の店'], [16, 3, '権兵衛の家'], [24, 1, '枚聞神社'], [6, 11, '岩風呂'], [12, 15, '砂むしの浜'], [0, 8, '野山へ']],
+        props: [{ x: 23, y: 5, img: 'torii' }, { x: 7, y: 10, img: 'onsen', w: 5, h: 2 }, { x: 17, y: 10, img: 'onsen', w: 4, h: 3 }],
+        labels: [[4, 3, '湯治宿'], [10, 3, '浜の店'], [16, 3, '権兵衛の家'], [24, 1, '枚聞神社'], [9, 10, '岩風呂'], [3, 9, '漁師小屋'], [12, 15, '砂むしの浜'], [0, 8, '野山へ']],
         warps: [{ x: 0, y: 8, to: 'satsuma', x2: 22, y2: 39, dir: 1 }],
         triggers: [{ x: 22, y: 13, w: 6, h: 5, cond: () => F('kaizoku') && !F('kaizokuDone'), boss: 'kaizokuB', bx: 25, by: 15, bdir: 1, run: () => STORY3.kaizokuBoss(), warn: '浜に、黒鮫の海賊たちが 上がってきている！\n【ボス戦】準備はいいですか？' }],
         houses: [
@@ -172,11 +173,11 @@ Object.assign(MAPS, {
           hs(...H[2], '権兵衛の家', { npcs: [npc(5, 4, 'woman', () => STORY3.line('gonbeWife'))], items: [pot(8, 4, 'gonhome', 'tsukeage', 3)] }),
           hs(...H[3], '漁師小屋', { npcs: [npc(4, 4, 'fisher', () => STORY3.line('ibusukiFisher'))], items: [chest(8, 3, 'ib1', 'mori2')] }),
         ],
-        look: { '6,11': () => STORY3.iwaburo(), '18,10': () => STORY3.iwaburo() },
+        look: Object.fromEntries([[7, 10, 5, 2], [17, 10, 4, 3]].flatMap(([x, y, w, h]) => Array.from({ length: w * h }, (_, k) => [(x + k % w) + ',' + (y + (k / w | 0)), () => STORY3.iwaburo()]))),
         npcs: [
           npc(12, 15, 'gonbe', () => STORY3.gonbe(), { cond: () => !F('gonbe'), mark: true }),
           npc(7, 15, 'woman', () => STORY3.sunamushi(), { dir: 0 }), npc(16, 15, 'elder', () => STORY3.line('ibusukiElder')),
-          npc(24, 7, 'kannushi', () => STORY3.shrine('hiraki'), { dir: 0 }), npc(5, 10, 'child', () => STORY3.line('ibusukiKid')),
+          npc(24, 7, 'kannushi', () => STORY3.shrine('hiraki'), { dir: 0 }), npc(6, 13, 'child', () => STORY3.line('ibusukiKid')),
           pot(1, 13, 'ib2', 'ibusukisuna', 3), chest(28, 12, 'ib3', 'kubiwa'),
         ],
       };
