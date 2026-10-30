@@ -433,7 +433,7 @@ const STORY = {
     await battle(['torikata', 'torikata', 'torikata'], { bg: 'town', noRun: true, intro: '寺田屋を 伏見奉行所の捕り方が取り囲んだ！' });
     await N('【目的】東の「薩摩藩伏見屋敷」へ逃げこもう！\n捕り方の頭が、行く手をふさいでいる――');
   },
-  async teradayaInn() { await S('innkeeper', F('teradaya3') ? 'お登勢でございます。\n龍馬さんを、どうか……！' : 'ようおこしやす。寺田屋でございます。', F('teradaya3') ? '登勢です。\n龍馬さんを、どうか……！' : 'いらっしゃいませ。寺田屋でございます。'); },
+  async teradayaInn() { await S('innkeeper', F('teradaya3') ? 'お登勢でございます。\n龍馬さんを、どうか……！' : 'ようおこしやす。寺田屋でございます。', F('teradaya3') ? '登勢です。\n龍馬さんを、どうか……！' : 'いらっしゃいませ。寺田屋でございます。'); if (!F('teradaya3') || F('teradayaEnd')) await STORY.inn(); },
   async torikashira() {
     await S('torikashira', '坂本龍馬、御用だ！\n神妙にいたせ！');
     await battle(['torikata', 'torikashira', 'torikata'], { bg: 'town', noRun: true, boss: true });

@@ -76,110 +76,304 @@ const TP = {
   'X': (x, r) => { TP.u(x, r); for (let i = 0; i < 4; i++) { P(x, 1 + i * 8, 10, 7, 18, '#8a7a50'); P(x, 1 + i * 8, 10, 7, 2, '#b8a870'); for (let y = 13; y < 28; y += 4) P(x, 1 + i * 8, y, 7, 1, '#6a5a38'); } },
   'Y': (x, r, f) => { TP['.'](x, r, 0, 0); P(x, 6, 2, 2, 28, '#4a3220'); P(x, 8, 3 + f, 18, 20, '#f0ece0'); P(x, 8, 3 + f, 18, 2, '#c8c0a8'); disc(x, 17, 13 + f, 6, '#1a1a1a'); disc(x, 17, 13 + f, 4, '#f0ece0'); P(x, 16, 8 + f, 2, 11, '#1a1a1a'); P(x, 12, 12 + f, 11, 2, '#1a1a1a'); },
 };
-const SOLID = new Set('T#HQhDLgKFMmCSPxRrfbVvIkzAUGJlOcXYo'.split(''));
+// 'D'（戸）は通れる（engine の passable で家のある戸だけ通す）。'~'（海・川）は通れない
+const SOLID = new Set('T#HQhLgKFMmCSPxRrfbVvIkzAUGJlOcXYo~'.split(''));
 const ANIM = new Set(['~', 'S', 'f', 'n', 'm', 'I', 'O', 'Y', 'o']);
 const TILE_CACHE = {};
+// v の下位4ビット＝模様の違い、上位＝隣のタイルによる縁（段差・水際・影）
 function tileImg(ch, f, v) {
   const key = ch + '|' + f + '|' + v;
-  if (!TILE_CACHE[key]) { const c = mk(32, 32); (TP[ch] || TP.x)(c.getContext('2d'), rnd(ch.charCodeAt(0) * 31 + v * 7 + 1), f, v); TILE_CACHE[key] = c; }
+  if (!TILE_CACHE[key]) {
+    const c = mk(32, 32), x = c.getContext('2d'), base = v & 15, bits = v >> 4;
+    (TP[ch] || TP.x)(x, rnd(ch.charCodeAt(0) * 31 + base * 7 + 1), f, base);
+    if (bits) paintEdge(x, ch, bits, f);
+    TILE_CACHE[key] = c;
+  }
   return TILE_CACHE[key];
+}
+// 立体感：水面は岸より一段低く、岩山・石垣は手前に壁面を見せ、高いものの右下に影を落とす
+const WATER = new Set(['~', 'o', 'S', 'p']);
+const TALL = new Set(['#', 'g', 'A', 'U', 'M', 'm', 'X', 'K']);
+function edgeBits(m, x, y, ch) {
+  const at = (i, j) => (i < 0 || j < 0 || i >= m.w || j >= m.h) ? ch : ((m.bmask && m.bmask[j * m.w + i]) || m.g[j][i]);
+  const n = at(x, y - 1), s = at(x, y + 1), w = at(x - 1, y), e = at(x + 1, y);
+  if (ch === '~' || ch === 'o') { const L = c => !WATER.has(c); return (L(n) ? 1 : 0) | (L(s) ? 2 : 0) | (L(w) ? 4 : 0) | (L(e) ? 8 : 0); }
+  if (ch === 'M' || ch === '#' || ch === 'A') { const O = c => c !== ch && !(ch === 'M' && (c === 'm' || c === 'c')); return (O(n) ? 1 : 0) | (O(s) ? 2 : 0) | (O(w) ? 4 : 0) | (O(e) ? 8 : 0); }
+  if ('.,;su'.includes(ch)) return (TALL.has(n) ? 1 : 0) | (TALL.has(w) ? 2 : 0);
+  return 0;
+}
+function paintEdge(x, ch, b, f) {
+  if (ch === '~' || ch === 'o') {
+    const foam = '#e2f0fa', wet = ch === 'o' ? '#163a66' : '#1e4a80', lip = '#8ab8e0';
+    if (b & 1) { P(x, 0, 0, 32, 5, wet); P(x, 0, 0, 32, 1, '#10284a'); P(x, 0, 5, 32, 1, lip); for (let i = (f * 3) % 7; i < 32; i += 7) P(x, i, 6, 3, 1, foam); }
+    if (b & 2) { P(x, 0, 29, 32, 3, lip); for (let i = (f * 2) % 6; i < 32; i += 6) P(x, i, 28, 3, 1, foam); }
+    if (b & 4) { P(x, 0, 0, 3, 32, wet); P(x, 3, 0, 1, 32, lip); for (let j = (f * 3) % 7; j < 32; j += 7) P(x, 4, j, 1, 3, foam); }
+    if (b & 8) { P(x, 29, 0, 3, 32, wet); P(x, 28, 0, 1, 32, lip); }
+  } else if (ch === 'M' || ch === '#' || ch === 'A') {
+    const M = ch === 'M', face = M ? ['#4e4038', '#3a2e28', '#6a5a4e'] : ['#5e5b53', '#46443e', '#8a867c'];
+    if (b & 2) { const h = M ? 13 : 9; P(x, 0, 32 - h, 32, h, face[0]); for (let i = 1; i < 32; i += M ? 5 : 8) { P(x, i, 32 - h + 1, 1, h - 1, face[1]); if (M) P(x, i + 1, 32 - h + 1, 1, h - 4, face[2]); } P(x, 0, 32 - h, 32, 1, M ? '#9a8a7a' : '#c8c3b5'); P(x, 0, 31, 32, 1, '#221a16'); }
+    if (b & 1) P(x, 0, 0, 32, 2, M ? '#9a8a7a' : '#c8c3b5');
+    if (b & 4) P(x, 0, 0, 2, 32, 'rgba(255,255,255,.18)');
+    if (b & 8) P(x, 29, 0, 3, 32, 'rgba(0,0,0,.22)');
+  } else {
+    x.fillStyle = 'rgba(20,30,10,.24)';
+    if (b & 1) { x.fillRect(0, 0, 32, 6); x.fillRect(0, 6, 32, 2); }
+    if (b & 2) x.fillRect(0, (b & 1) ? 8 : 0, 5, 32 - ((b & 1) ? 8 : 0));
+  }
 }
 // ミニマップ用の代表色
 const TILE_COLOR = { '.': '#5b9a40', 'u': '#8a8a52', ',': '#c4a66e', ';': '#9a968a', 's': '#e6d6a0', '~': '#2f66a8', 'o': '#21508c', 'T': '#2b5f28', 'P': '#2d6233', 'b': '#5f9a3a', '#': '#8a867c', 'H': '#4d5468', 'Q': '#3c4252', 'h': '#ece6d4', 'D': '#28407a', 'L': '#c8a040', 'g': '#2a5e2e', 'K': '#8a6a40', 'W': '#ad9268', 'F': '#7a5634', 'n': '#5a7a8a', 'M': '#6c5c50', 'm': '#c84a1a', 'C': '#26262a', 'S': '#1b1b1b', '=': '#9b968a', 'p': '#8a6a42', 'f': '#e05a1a', 'r': '#3a3430', 'R': '#6a645c', 'w': '#a8784a', 't': '#c8c088', 'V': '#3a2a1e', 'v': '#ece4cc', 'e': '#9a4a32', 'A': '#9a958a', 'U': '#f0ece0', 'G': '#5a3a20', 'J': '#c83020', 'O': '#6ab8c8', 'c': '#120c0a', 'X': '#8a7a50' };
 
+// ---------- 建物（家ごとに形を変えて、一枚絵で描く。足元のタイルは当たり判定とミニマップ用） ----------
+// b: { x, y, w, h, door, style(buke/machiya/kaya/kura/tera/yoko/jin), roof(hip/gable/irimoya), wing(L/R), sign, noren, locked }
+const BLD_UP = { buke: 12, machiya: 16, kaya: 22, kura: 18, tera: 30, yoko: 18, jin: 4 };
+const BLD_CACHE = {};
+function lerp(a, b, t) { return a + (b - a) * t; }
+// 屋根：上辺 top〜軒先 bot。inset は棟の縮み（寄棟）
+function paintRoof(x, L, R, top, bot, o) {
+  const h = bot - top, mat = o.mat || 'kawara', inset = o.inset || 0, mid = o.mid != null ? o.mid : null;
+  const base = o.col || (mat === 'kaya' ? '#a8834a' : mat === 'slate' ? '#4a5262' : '#4d5468');
+  const lite = shade(base, mat === 'kaya' ? .22 : .28), dark = shade(base, -.35);
+  for (let i = 0; i < h; i++) {
+    const t = i / Math.max(1, h - 1), y = top + i;
+    let ins = inset * (1 - t); if (mid != null) ins = i < mid ? inset * .55 : inset * .55 * (1 - (i - mid) / Math.max(1, h - mid));
+    const l = Math.round(L + ins - t * 3), r = Math.round(R - ins + t * 3);
+    P(x, l, y, r - l, 1, mix(lite, dark, Math.pow(t, 1.3)));
+    if (mat === 'kawara') { if (i % 5 === 4) P(x, l, y, r - l, 1, shade(mix(lite, dark, t), -.35)); else if (i % 5 === 0) P(x, l, y, r - l, 1, shade(mix(lite, dark, t), .12)); for (let k = l + 2 + (i / 5 | 0) % 2 * 2; k < r - 1; k += 4) P(x, k, y, 1, 1, shade(mix(lite, dark, t), -.2)); }
+    if (mat === 'slate') { for (let k = l + ((i >> 2) % 2) * 3; k < r; k += 6) P(x, k, y, 1, 1, shade(base, -.3)); if (i % 4 === 3) P(x, l, y, r - l, 1, shade(base, -.25)); }
+    // 端（隅棟・破風）
+    if (ins > 1 || mid != null && i >= mid) { P(x, l, y, 2, 1, shade(lite, .15)); P(x, r - 2, y, 2, 1, dark); }
+    else { P(x, l, y, 2, 1, o.barge || '#3a2618'); P(x, r - 2, y, 2, 1, o.barge || '#3a2618'); }
+  }
+  if (mat === 'kaya') {
+    const r = rnd(L * 7 + top * 3 + 11);
+    for (let k = 0; k < (R - L) * h / 7; k++) { const t = r(), yy = top + 3 + t * (h - 8), ins = inset * (1 - t), l = L + ins, w = (R - ins) - l; P(x, l + r() * w, yy, 1, 3 + r() * 3, r() < .5 ? shade(base, .32) : shade(base, -.22)); }
+    // 軒先の厚み（刈り込み）
+    P(x, L - 3, bot - 5, R - L + 6, 5, '#6a4a26'); for (let k = L - 3; k < R + 3; k += 2) P(x, k, bot - 5 + (k % 3), 1, 3, '#8a6a3a'); P(x, L - 3, bot - 1, R - L + 6, 1, '#3a2614');
+  } else {
+    // 軒先の瓦（丸い先端）
+    P(x, L - 3, bot - 2, R - L + 6, 2, shade(base, -.45)); for (let k = L - 2; k < R + 2; k += 4) P(x, k, bot - 3, 2, 2, shade(base, .35));
+  }
+  // 棟
+  const rl = L + (mid != null ? inset * .55 : inset), rr = R - (mid != null ? inset * .55 : inset);
+  if (mat === 'kaya') { P(x, rl - 2, top - 3, rr - rl + 4, 6, '#3a2a1a'); P(x, rl - 2, top - 3, rr - rl + 4, 1, '#6a5a3a'); for (let k = rl + 2; k < rr - 2; k += 7) P(x, k, top - 6, 2, 9, '#2a1e12'); }
+  else { P(x, rl - 1, top - 3, rr - rl + 2, 5, shade(base, -.5)); P(x, rl - 1, top - 3, rr - rl + 2, 1, shade(base, .45)); P(x, rl - 3, top - 6, 5, 7, shade(base, -.55)); P(x, rr - 2, top - 6, 5, 7, shade(base, -.55)); P(x, rl - 3, top - 6, 5, 1, shade(base, .3)); P(x, rr - 2, top - 6, 5, 1, shade(base, .3)); }
+}
+function kanji(x, t, cx, cy, size, col) { x.save(); x.fillStyle = col; x.font = `bold ${size}px "DotGothic16", serif`; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(t, cx, cy); x.restore(); }
+function bldImg(b) {
+  const key = JSON.stringify(b); if (BLD_CACHE[key]) return BLD_CACHE[key];
+  const W = b.w * 32, H = (b.h || 3) * 32, st = b.style || 'buke', up = BLD_UP[st] || 12, M = 6;
+  const c = mk(W + M * 2 + 8, H + up + 6), x = c.getContext('2d'), r = rnd(b.x * 31 + b.y * 17 + 5);
+  x.translate(M, up);
+  const dc = (b.door - b.x) * 32;   // 戸のある列の左端
+  // 右側の影
+  x.fillStyle = 'rgba(0,0,0,.22)'; x.fillRect(W + 2, H - 40, 7, 40); x.fillRect(4, H, W + 4, 3);
+  const posts = (y0, y1, col) => { for (let i = 0; i <= W; i += 32) P(x, Math.min(W - 3, i), y0, 3, y1 - y0, col); };
+  const door = (y0, kind) => {
+    const dx = dc + 4, dw = 24;
+    if (kind === 'kura') { P(x, dx - 1, y0, dw + 2, H - y0, '#1e1a18'); P(x, dx + 1, y0 + 2, dw - 2, H - y0 - 2, b.locked ? '#3a3634' : '#120c0a'); if (b.locked) { P(x, dx + 11, y0 + 6, 2, H - y0 - 6, '#1e1a18'); P(x, dx + 9, y0 + 12, 6, 6, '#c8a040'); P(x, dx + 11, y0 + 14, 2, 3, '#1e1a18'); } return; }
+    P(x, dx - 1, y0, dw + 2, H - y0, '#2e1d10'); P(x, dx, y0 + 1, dw, H - y0 - 1, '#8a6640'); for (let yy = y0 + 4; yy < H; yy += 4) P(x, dx, yy, dw, 1, '#6a4a2c'); P(x, dx + 11, y0 + 1, 2, H - y0 - 1, '#4a3420');
+    if (b.noren) { const nc = b.noren; P(x, dx - 2, y0, dw + 4, 2, '#2a1a10'); for (let k = 0; k < 3; k++) { P(x, dx - 1 + k * 9, y0 + 2, 8, 11, nc); P(x, dx - 1 + k * 9, y0 + 2, 8, 1, shade(nc, .3)); P(x, dx - 1 + k * 9 + 7, y0 + 3, 1, 10, shade(nc, -.3)); } if (b.mark) kanji(x, b.mark, dx + 12, y0 + 8, 8, '#f4f0e6'); }
+    else { P(x, dx, y0 + 2, dw, 5, '#f0e8d4'); for (let k = dx + 2; k < dx + dw; k += 4) P(x, k, y0 + 2, 1, 5, '#6a4a2c'); }
+    P(x, dx - 2, H, dw + 4, 3, '#8a867c'); P(x, dx - 2, H, dw + 4, 1, '#b8b3a5');
+  };
+  const sign = (cy) => { if (!b.sign) return; const w = Math.max(22, b.sign.length * 10 + 6); const sx = dc + 16 - w / 2; P(x, sx - 1, cy - 7, w + 2, 15, '#2a1a10'); P(x, sx, cy - 6, w, 13, '#d8b878'); P(x, sx, cy - 6, w, 1, '#f0d8a0'); kanji(x, b.sign, sx + w / 2, cy + 1, 10, '#1a1210'); };
+  const lattice = (wx, wy, ww, wh) => { P(x, wx - 1, wy - 1, ww + 2, wh + 2, '#3a2a1a'); P(x, wx, wy, ww, wh, '#2a2420'); for (let k = wx + 1; k < wx + ww; k += 3) P(x, k, wy, 1, wh, '#b89868'); P(x, wx, wy + (wh >> 1), ww, 1, '#b89868'); };
+  if (st === 'buke' || st === 'jin') {
+    const wh = 34, wt = H - wh, wl = b.wing ? (b.wing === 'L' ? 0 : W - 56) : -1, ml = b.wing === 'L' ? 50 : 0, mr = b.wing === 'R' ? W - 50 : W;
+    // 壁
+    P(x, 0, wt, W, wh, b.wall || '#efe8d6'); P(x, 0, wt + 15, W, wh - 15, '#5a3e26'); for (let yy = wt + 18; yy < H; yy += 4) P(x, 0, yy, W, 1, '#4a321e');
+    P(x, 0, H - 3, W, 3, '#8a867c'); posts(wt, H, '#4a3220');
+    for (let i = 0; i < W; i += 32) if (i !== dc) { if (r() < .7) lattice(i + 8, wt + 5, 16, 8); }
+    door(wt + 4);
+    // 屋根
+    if (wl >= 0) paintRoof(x, wl, wl + 56, 22, wt + 4, { inset: 10, col: b.rc });
+    paintRoof(x, ml, mr, -up + 8, wt + 4, { inset: b.roof === 'gable' ? 0 : (mr - ml) * .22, mid: b.roof === 'irimoya' ? Math.round((wt + 4 + up - 8) * .4) : null, col: b.rc });
+    x.fillStyle = 'rgba(0,0,0,.3)'; x.fillRect(0, wt + 4, W, 3);
+    if (st === 'jin') { for (const px of [-4, W + 1]) { P(x, px, wt - 30, 2, 30 + wh, '#3a2a1a'); P(x, px + (px < 0 ? -6 : 2), wt - 28, 7, 22, '#f0ece0'); disc(x, px + (px < 0 ? -3 : 5), wt - 18, 2, '#1a1a1a'); } P(x, 0, wt + 6, W, 10, '#f0ece0'); for (let i = 16; i < W; i += 48) { disc(x, i, wt + 11, 4, '#1a1a1a'); disc(x, i, wt + 11, 3, '#f0ece0'); P(x, i - 3, wt + 11, 7, 1, '#1a1a1a'); P(x, i, wt + 8, 1, 7, '#1a1a1a'); } }
+    sign(wt + 2);
+  } else if (st === 'kaya') {
+    const wh = 30, wt = H - wh;
+    P(x, 0, wt, W, wh, '#c8a878'); speck(x, r, W, ['#b8986a', '#d8b888'], W, wh); x.translate(0, 0);
+    for (let yy = wt; yy < H; yy++) if (r() < .02) P(x, 0, yy, W, 1, '#b08a5a');
+    P(x, 0, wt + 16, W, wh - 16, '#6a4a2c'); for (let yy = wt + 19; yy < H; yy += 4) P(x, 0, yy, W, 1, '#5a3c22'); posts(wt, H, '#4a3220');
+    for (let i = 0; i < W; i += 32) if (i !== dc && r() < .6) lattice(i + 9, wt + 4, 14, 8);
+    door(wt + 4);
+    paintRoof(x, 0, W, -up + 10, wt + 6, { mat: 'kaya', inset: W * .26 });
+    x.fillStyle = 'rgba(0,0,0,.35)'; x.fillRect(0, wt + 6, W, 3);
+    sign(wt + 3);
+  } else if (st === 'machiya') {
+    const w1 = 30, t1 = H - w1, t2 = t1 - 26;
+    P(x, 0, t1, W, w1, '#4a2e1a'); for (let i = 1; i < W; i += 3) P(x, i, t1 + 2, 1, w1 - 4, '#8a6038'); P(x, 0, H - 3, W, 3, '#8a867c'); posts(t1, H, '#2a1a10');
+    door(t1 + 2);
+    P(x, 0, t2, W, 26, '#e8dcc0'); posts(t2, t1, '#4a3220'); for (let i = 0; i < W; i += 32) { P(x, i + 7, t2 + 8, 18, 9, '#3a2a1a'); for (let k = i + 8; k < i + 25; k += 3) P(x, k, t2 + 8, 1.5, 9, '#d8ccb0'); }
+    paintRoof(x, -2, W + 2, t1 - 9, t1 + 3, { col: b.rc });
+    x.fillStyle = 'rgba(0,0,0,.3)'; x.fillRect(0, t1 + 3, W, 3);
+    paintRoof(x, 0, W, -up + 8, t2 + 3, { inset: 0, col: b.rc });
+    x.fillStyle = 'rgba(0,0,0,.3)'; x.fillRect(0, t2 + 3, W, 3);
+    sign(t1 - 4);
+  } else if (st === 'kura') {
+    const wt = H - 64;
+    P(x, 0, wt, W, 64, '#f4f0e4'); P(x, 0, wt, 3, 64, '#fffaf0'); P(x, W - 6, wt, 6, 64, '#d8d0c0');
+    const nz = H - 20; P(x, 0, nz, W, 20, '#3a3c42'); for (let i = -20; i < W + 20; i += 7) for (let k = 0; k < 20; k++) { P(x, i + k * .5, nz + k, 1, 1, '#e8e4dc'); P(x, i + 10 - k * .5, nz + k, 1, 1, '#e8e4dc'); }
+    P(x, W / 2 - 7, wt + 8, 14, 11, '#1e1a18'); P(x, W / 2 - 5, wt + 10, 10, 7, '#3a3634');
+    door(H - 30, 'kura');
+    paintRoof(x, -2, W + 2, -up + 8, wt + 4, { inset: 0, col: '#2e3038' });
+    x.fillStyle = 'rgba(0,0,0,.25)'; x.fillRect(0, wt + 4, W, 3);
+  } else if (st === 'tera') {
+    const wh = 36, wt = H - wh;
+    P(x, -2, H - 4, W + 4, 4, '#9a968a'); P(x, -2, H - 4, W + 4, 1, '#c0bbae');
+    P(x, 0, wt, W, wh - 4, '#e8dcc0'); posts(wt, H - 4, '#8a3a22'); P(x, 0, wt + 2, W, 3, '#8a3a22');
+    for (let i = 0; i < W; i += 32) if (i !== dc) lattice(i + 6, wt + 9, 20, 16);
+    door(wt + 6);
+    paintRoof(x, -4, W + 4, -up + 8, wt + 6, { inset: W * .3, mid: Math.round((wt + up) * .38), col: '#3e4452' });
+    for (const ex of [-7, W + 2]) P(x, ex, wt + 1, 5, 3, '#3e4452');
+    x.fillStyle = 'rgba(0,0,0,.35)'; x.fillRect(0, wt + 6, W, 4);
+  } else if (st === 'yoko') {
+    const wt = H - 62;
+    P(x, 0, wt, W, 62, '#a8503a'); for (let yy = wt; yy < H; yy += 4) { P(x, 0, yy, W, 1, '#8a3a2a'); for (let k = (yy / 4 % 2) * 5; k < W; k += 10) P(x, k, yy, 1, 4, '#8a3a2a'); }
+    P(x, 0, wt + 28, W, 3, '#e8e0d0'); P(x, 0, H - 4, W, 4, '#8a867c');
+    for (let i = 0; i < W; i += 32) { for (const wy of [wt + 6, wt + 36]) { if (i === dc && wy > wt + 30) continue; P(x, i + 9, wy, 14, 18, '#f0ece0'); P(x, i + 11, wy + 2, 10, 14, '#2a3a5a'); P(x, i + 15, wy + 2, 2, 14, '#f0ece0'); P(x, i + 11, wy + 8, 10, 1, '#f0ece0'); P(x, i + 8, wy + 18, 16, 2, '#d8d0c0'); } }
+    const dx = dc + 6; P(x, dx - 2, H - 30, 24, 30, '#e8e0d0'); P(x, dx, H - 28, 20, 28, '#3a2418'); P(x, dx + 9, H - 28, 2, 28, '#2a1a10'); disc(x, dx + 6, H - 14, 1, '#e0c040'); disc(x, dx + 14, H - 14, 1, '#e0c040');
+    paintRoof(x, -2, W + 2, -up + 6, wt + 3, { mat: 'slate', inset: W * .18 });
+    x.fillStyle = 'rgba(0,0,0,.3)'; x.fillRect(0, wt + 3, W, 3);
+    sign(H - 34);
+  }
+  return (BLD_CACHE[key] = { c, ox: -M, oy: -up });
+}
+
 // ---------- 人物（マップ 32x48 ／ 戦闘 64x96） ----------
 // p: { skin, hair, hs(髪型), hat, body, body2, cloth, belt, sword, big, crest, beard, pose, kind }
+// 頭身は約3。光は左上から当たる（右と下が暗い）。
 function paintFig(x, p, d, f, s = 1) {
   const R = (a, b, w, h, c) => P(x, a * s, b * s, w * s, h * s, c);
   const E = (cx, cy, rx, ry, c) => ell(x, cx * s, cy * s, rx * s, ry * s, c);
-  const sk = p.skin || '#f2c49c', skD = shade(sk, -.15), hr = p.hair || '#1c1a22', hrL = shade(hr, .25);
-  const bd = p.body || '#3a4a6a', bdD = shade(bd, -.25), bdL = shade(bd, .15), b2 = p.body2 || shade(bd, -.35), b2D = shade(b2, -.25);
-  const cl = p.cloth || 'kimono', big = p.big ? 2 : 0;
-  const walk = f === 1 ? 1 : f === 2 ? -1 : 0;
-  // 影
-  E(16, 45.5, 9 + big, 2.2, 'rgba(0,0,0,.28)');
-  // 下半身
-  if (cl === 'kimono' || cl === 'robe' || cl === 'dress' || cl === 'hakama') {
-    const col = cl === 'hakama' ? b2 : bd, colD = cl === 'hakama' ? b2D : bdD;
-    if (d === 1) { for (let y = 33; y < 45; y++) { const k = (y - 33) / 12; R(11 - k * 2 + (walk > 0 ? k * 2 : 0), y, 10 + k * 3, 1, col); } R(11, 33, 2, 12, colD); }
-    else { for (let y = 33; y < 45; y++) { const k = (y - 33) / 12; R(9 - big - k * 2, y, 14 + big * 2 + k * 4, 1, col); } R(15.5, 34, 1, 11, colD); R(9 - big - 2, 43, 18 + big * 2, 2, colD); }
-    const fy = 44; R(10 + walk, fy + (walk > 0 ? -1 : 0), 5, 3, '#3a2a20'); R(17 - walk, fy + (walk < 0 ? -1 : 0), 5, 3, '#3a2a20');
+  const sk = p.skin || '#f2c49c', skD = shade(sk, -.16), skL = shade(sk, .18), hr = p.hair || '#1c1a22', hrL = shade(hr, .32), hrD = shade(hr, -.4);
+  const bd = p.body || '#3a4a6a', bdD = shade(bd, -.3), bdL = shade(bd, .2), b2 = p.body2 || shade(bd, -.35), b2D = shade(b2, -.3), b2L = shade(b2, .18);
+  const cl = p.cloth || 'kimono', big = p.big ? 2 : 0, jap = cl !== 'west' && cl !== 'uniform';
+  const walk = f === 1 ? 1 : f === 2 ? -1 : 0, bob = walk ? -1 : 0;
+  const ink = '#1a1214', iris = p.eyec || '#3a2418', white = '#fbf6ee';
+  E(16, 45.5, 9 + big, 2.4, 'rgba(0,0,0,.3)');
+  // ---- 下半身 ----
+  if (d === 1) {
+    if (jap) {
+      const col = cl === 'hakama' ? b2 : bd, cD = cl === 'hakama' ? b2D : bdD;
+      for (let y = 31; y < 44; y++) { const k = (y - 31) / 13; R(11 - k * (cl === 'dress' ? 0 : 2) + (walk > 0 ? k * 2 : 0), y, 10 + k * (cl === 'dress' ? 1 : 4), 1, col); }
+      R(11, 31, 2, 13, cD); if (cl === 'hakama') { R(15, 33, 1, 11, cD); R(19, 34, 1, 10, cD); }
+      R(10 + walk * 2, 43, 6, 3, '#2a1e18'); R(16 - walk * 2, 43, 6, 3, '#3a2a20'); R(10 + walk * 2, 45, 6, 1, '#c8b890');
+    } else {
+      const lg = b2; R(12 + walk * 2, 32, 5, 12, lg); R(15 - walk * 2, 32, 5, 12, shade(lg, -.2)); R(11 + walk * 2, 43, 8, 3, '#141414'); R(14 - walk * 2, 43, 8, 3, '#1e1e1e'); R(11 + walk * 2, 43, 8, 1, '#4a4a4a');
+    }
+  } else if (jap) {
+    const col = cl === 'hakama' ? b2 : bd, cD = cl === 'hakama' ? b2D : bdD, cL = cl === 'hakama' ? b2L : bdL, nar = cl === 'dress' ? 3 : 0;
+    for (let y = 31; y < 44; y++) { const k = (y - 31) / 13, w = 14 + big * 2 + k * (6 - nar * 2); R(16 - w / 2, y, w, 1, col); R(16 + w / 2 - 3, y, 3, 1, cD); R(16 - w / 2, y, 1, 1, cL); }
+    if (cl === 'hakama') { for (const px of [12, 15, 18]) R(px + (px - 15) * .3, 33, 1, 11, cD); R(16 - (11 + big), 43, 22 + big * 2, 1, cD); }
+    else if (cl === 'dress') { R(16, 33, 1, 11, cD); R(16 - (6 + big), 42, 12 + big * 2, 2, cD); }
+    else { R(17, 33, 1, 11, cD); R(13, 34, 1, 9, bdL); }
+    const fy = 43; R(10 + walk, fy + (walk > 0 ? -1 : 0), 5, 3, '#2a1e18'); R(17 - walk, fy + (walk < 0 ? -1 : 0), 5, 3, '#2a1e18');
+    R(10 + walk, fy + 2 + (walk > 0 ? -1 : 0), 5, 1, '#e8e0cc'); R(17 - walk, fy + 2 + (walk < 0 ? -1 : 0), 5, 1, '#e8e0cc');
   } else {
-    const lg = p.body2 || '#2a2a36';
-    if (d === 1) { R(12 + walk * 2, 34, 5, 11, lg); R(15 - walk * 2, 34, 5, 11, shade(lg, -.2)); R(11 + walk * 2, 44, 7, 3, '#1a1a1a'); R(14 - walk * 2, 44, 7, 3, '#141414'); }
-    else { R(10 - big, 34 + (walk > 0 ? -1 : 0), 6, 11, lg); R(16 + big, 34 + (walk < 0 ? -1 : 0), 6, 11, lg); R(16, 35, 1, 9, shade(lg, -.3)); R(10 - big, 44, 6, 3, '#1a1a1a'); R(16 + big, 44, 6, 3, '#1a1a1a'); }
+    const lg = b2;
+    R(10 - big, 32 + (walk > 0 ? -1 : 0), 6, 12, lg); R(16 + big, 32 + (walk < 0 ? -1 : 0), 6, 12, shade(lg, -.12)); R(15.5, 33, 1, 10, shade(lg, -.35)); R(10 - big, 32, 1, 11, shade(lg, .15));
+    if (cl === 'uniform') { R(11 - big, 33, 1, 10, '#c02020'); R(20 + big, 33, 1, 10, '#c02020'); }
+    R(9 - big, 43, 7, 3, '#141414'); R(16 + big, 43, 7, 3, '#141414'); R(9 - big, 43, 7, 1, '#4a4a4a'); R(16 + big, 43, 7, 1, '#4a4a4a');
   }
-  // 胴体
-  const tw = d === 1 ? 12 : 16 + big * 2, tx = 16 - tw / 2;
-  R(tx, 21, tw, 14, bd); R(tx, 21, tw, 2, bdL); R(tx + tw - 3, 23, 3, 12, bdD);
+  // ---- 胴 ----
+  const tw = d === 1 ? 12 : 16 + big * 2, tx = 16 - tw / 2, ty = 19 + bob;
+  R(tx, ty, tw, 14, bd); R(tx, ty, tw, 1, bdL); R(tx, ty + 1, 2, 12, bdL); R(tx + tw - 4, ty + 1, 4, 13, bdD);
   if (d === 0) {
-    if (cl === 'west' || cl === 'uniform') { R(14, 21, 4, 6, cl === 'uniform' ? bdD : '#f0f0f0'); if (cl === 'west') R(15, 22, 2, 5, p.tie || '#7a1a1a'); for (let y = 25; y < 34; y += 3) R(15.5, y, 1, 1, '#e0c040'); if (cl === 'uniform') { R(tx, 21, tw, 2, shade(bd, -.4)); R(tx - 1, 21, 3, 2, '#e0c040'); R(tx + tw - 2, 21, 3, 2, '#e0c040'); } }
-    else if (cl !== 'robe' || true) { for (let i = 0; i < 6; i++) { R(12 + i * .6, 21 + i, 1.5, 1, '#efe8d8'); R(19 - i * .6, 21 + i, 1.5, 1, '#efe8d8'); } R(14, 21, 4, 2, skD); }
-    if (cl === 'robe') for (let i = 0; i < 12; i++) R(10 + i, 22 + i, 2, 1, p.kesa || '#7a3a22');
-    if (p.crest) { E(12, 26, 2, 2, '#f4f0e6'); R(11, 26, 2, .6, bd); R(12, 24.5, .6, 3, bd); }
+    if (cl === 'west') { R(14, ty, 4, 7, '#f2f2f2'); R(15, ty + 1, 2, 6, p.tie || '#7a1a1a'); for (let i = 0; i < 6; i++) { R(12 + i * .4, ty + i, 2, 1, bdD); R(18.5 - i * .4, ty + i, 2, 1, bdD); } R(15.5, ty + 8, 1, 1, '#c8c0a0'); R(15.5, ty + 11, 1, 1, '#c8c0a0'); }
+    else if (cl === 'uniform') { R(tx, ty, tw, 3, shade(bd, -.45)); R(13, ty, 6, 2, '#c02020'); for (let y = ty + 4; y < ty + 13; y += 3) R(15.5, y, 1.2, 1.2, '#f0d040'); R(tx - 1, ty, 4, 2, '#e0c040'); R(tx + tw - 3, ty, 4, 2, '#e0c040'); R(tx + 2, ty + 9, 3, 1, bdD); R(tx + tw - 5, ty + 9, 3, 1, bdD); }
+    else {
+      for (let i = 0; i < 8; i++) { R(12 + i * .55, ty + i, 2, 1, '#f4eee0'); R(18.2 - i * .55, ty + i, 2, 1, '#f4eee0'); R(13.6 + i * .55, ty + i, .8, 1, shade(bd, -.45)); }
+      R(14.5, ty, 3, 2, skD);
+      if (cl === 'robe') for (let i = 0; i < 13; i++) { R(10 + i, ty + 1 + i, 2, 1, p.kesa || '#8a3a22'); R(10 + i, ty + 2 + i, 1, 1, shade(p.kesa || '#8a3a22', -.3)); }
+    }
+    if (p.crest) { E(12, ty + 6, 2, 2, '#f4f0e6'); R(11, ty + 6, 2, .6, bd); R(12, ty + 4.5, .6, 3, bd); }
   }
-  if (cl !== 'west' && cl !== 'uniform') { R(tx, 31, tw, 3, p.belt || shade(bd, -.45)); if (d === 3 && cl === 'dress') R(12, 30, 8, 5, p.belt || '#c8a040'); }
-  else R(tx, 32, tw, 2, '#1a1a1a');
-  // 刀（腰）
-  if (p.sword && d !== 3) { if (d === 0) { for (let i = 0; i < 9; i++) R(22 + big + i * .55, 29 + i, 1.5, 1.2, i < 3 ? '#2a1a1a' : '#3a3030'); R(21 + big, 28, 3, 2, '#c8a040'); } else { for (let i = 0; i < 12; i++) R(17 + i * .5, 30 + i * .3, 1.5, 1.5, '#2a2020'); } }
-  // 腕
-  if (d === 1) { const a = walk * 2; R(13 + a, 23, 4, 9, bdD); R(13 + a, 31, 4, 3, sk); }
+  if (jap) { const bc = p.belt || shade(bd, -.5); R(tx, 30 + bob, tw, 3, bc); R(tx, 30 + bob, tw, 1, shade(bc, .25)); if (d === 3 && cl === 'dress') { R(11, 28, 10, 6, p.belt || '#c8a040'); R(13, 29, 6, 4, shade(p.belt || '#c8a040', -.2)); } }
+  else { R(tx, 31, tw, 2, '#1a1a1a'); if (d === 0) R(15, 31, 2, 2, '#c8b060'); }
+  // ---- 刀 ----
+  if (p.sword && d !== 3) {
+    if (d === 0) { for (let i = 0; i < 10; i++) R(21 + big + i * .6, 27 + bob + i * .95, 1.6, 1.4, i < 3 ? '#2a1a1a' : '#3a2e30'); R(20 + big, 26 + bob, 3, 2, '#c8a040'); R(20 + big, 26 + bob, 1, 1, '#f0d070'); }
+    else { for (let i = 0; i < 14; i++) R(16 + i * .6, 29 + bob + i * .3, 1.6, 1.6, i < 4 ? '#2a1a1a' : '#3a2e30'); R(15, 29 + bob, 2, 2, '#c8a040'); }
+  }
+  // ---- 腕（和服は袂が垂れる） ----
+  const sl = jap ? 2 : 0;
+  if (d === 1) { const a = walk * 2; R(13 + a, ty + 3, 5, 9, bdD); if (sl) R(12 + a, ty + 9, 7, 4, bdD); R(13 + a, ty + 12, 4, 3, sk); }
   else {
     const la = walk, ra = -walk;
-    R(tx - 3, 22 + Math.max(0, la), 4, 10, bd); R(tx - 3, 31 + la, 4, 3, sk);
-    R(tx + tw - 1, 22 + Math.max(0, ra), 4, 10, bdD); R(tx + tw - 1, 31 + ra, 4, 3, skD);
+    R(tx - 3, ty + 2 + Math.max(0, la), 4, 9, bd); R(tx - 3, ty + 2, 1, 9, bdL);
+    R(tx + tw - 1, ty + 2 + Math.max(0, ra), 4, 9, bdD);
+    if (sl) { R(tx - 4, ty + 8 + la, 5, 5, bd); R(tx - 4, ty + 12 + la, 5, 1, bdD); R(tx + tw - 1, ty + 8 + ra, 5, 5, bdD); R(tx + tw - 1, ty + 12 + ra, 5, 1, shade(bd, -.5)); }
+    R(tx - 3, ty + 11 + la + sl, 4, 3, sk); R(tx + tw - 1, ty + 11 + ra + sl, 4, 3, skD);
   }
-  // 頭
-  const hx = d === 1 ? 15 : 16, hy = 13;
-  E(hx, hy + 1, 8.5, 8.2, sk); E(hx + 3, hy + 3, 4, 5, skD); E(hx - 1, hy, 6.5, 6.8, sk);
-  const hs = p.hs || 'mage';
+  // ---- 頭 ----
+  const hx = (d === 1 ? 15 : 16), hy = 12 + bob, hs = p.hs || 'mage';
+  R(hx - 2, hy + 6, 4, 3, skD);
+  if (d === 1) { E(hx, hy, 7 + big * .5, 7.2, sk); E(hx - 4, hy + 4, 3, 3, sk); R(hx - 8, hy + 1, 2, 2, sk); E(hx + 3, hy + 2, 3, 4, skD); }
+  else { E(hx, hy, 7.2 + big * .5, 7, sk); E(hx, hy + 3, 6 + big * .5, 5, sk); E(hx + 3.5, hy + 2, 3, 4.5, skD); E(hx - 3, hy - 1, 2.5, 2.5, skL); }
+  const pate = p.pate || mix(sk, '#a8b8d0', .35);
   if (d === 3) {
-    if (hs !== 'bald') { E(hx, hy, 8.8, 8.4, hr); R(hx - 6, hy - 6, 3, 2, hrL); }
-    if (hs === 'mage' || hs === 'boy') { R(hx - 1, hy - 10, 3, 6, hr); R(hx - 2, hy - 11, 5, 2, hrL); }
-    if (hs === 'woman') { E(hx, hy - 8, 6, 4, hr); R(hx - 7, hy - 9, 14, 1.5, '#d8b040'); }
+    if (hs !== 'bald') { E(hx, hy - 1, 7.6 + big * .5, 7.4, hr); R(hx - 5, hy - 6, 3, 2, hrL); R(hx + 3, hy + 1, 4, 5, hrD); }
+    if (hs === 'mage' || hs === 'boy') { E(hx, hy - 4, 5, 3, pate); R(hx - 1, hy - 10, 3, 7, hr); R(hx - 1, hy - 10, 1, 6, hrL); R(hx - 1, hy - 4, 3, 1, '#e8e0d0'); }
+    if (hs === 'woman') { E(hx, hy - 8, 6.5, 4, hr); E(hx, hy + 5, 6, 3, hr); R(hx - 7, hy - 9, 14, 1.5, '#d8b040'); E(hx - 2, hy - 10, 2, 1, hrL); }
+    if (hs === 'west' || hs === 'short' || hs === 'kid') for (let i = -6; i < 7; i += 3) R(hx + i, hy + 5, 2, 2, hr);
   } else if (d === 0) {
     if (hs === 'mage' || hs === 'boy') {
-      E(hx, hy - 3, 6.5, 4, p.pate || mix(sk, '#a8b8d0', .3));
-      R(hx - 9, hy - 3, 3, 10, hr); R(hx + 6, hy - 3, 3, 10, hr); R(hx - 8, hy - 5, 2, 3, hr); R(hx + 6, hy - 5, 2, 3, hr);
-      R(hx - 1, hy - 11, 3, 8, hr); R(hx - 1, hy - 11, 1, 6, hrL); R(hx - 2, hy - 4, 5, 2, hr);
-      if (hs === 'boy') { E(hx, hy - 4, 5, 2.5, hr); R(hx - 4, hy - 3, 2, 2, hr); R(hx + 2, hy - 3, 2, 2, hr); R(hx - 3, hy - 6, 4, 1, hrL); }
+      E(hx, hy - 4, 6, 3.5, pate); R(hx - 3, hy - 6, 2, 1, shade(pate, .3));
+      R(hx - 8, hy - 4, 3, 9, hr); R(hx + 5, hy - 4, 3, 9, hrD); R(hx - 8, hy - 4, 1, 7, hrL); R(hx - 7, hy - 6, 2, 3, hr); R(hx + 5, hy - 6, 2, 3, hr);
+      R(hx - 1, hy - 12, 3, 8, hr); R(hx - 1, hy - 12, 1, 7, hrL); R(hx - 2, hy - 13, 5, 2, hr); R(hx - 1, hy - 7, 3, 1, '#ece4d4');
+      if (hs === 'boy') { E(hx, hy - 4, 5.5, 2.5, hr); for (const i of [-5, -2, 1, 4]) R(hx + i, hy - 3, 2, 2 + (i & 1), hr); R(hx - 3, hy - 6, 4, 1, hrL); }
     } else if (hs === 'short' || hs === 'west' || hs === 'kid') {
-      E(hx, hy - 4, 9, 5, hr); R(hx - 9, hy - 4, 2, hs === 'west' ? 8 : 6, hr); R(hx + 7, hy - 4, 2, hs === 'west' ? 8 : 6, hr);
-      if (hs === 'kid') { for (let i = -7; i < 8; i += 3) R(hx + i, hy - 1, 2, 2, hr); } else for (let i = -6; i < 7; i += 3) R(hx + i, hy - 1, 2, 1, hr);
-      R(hx - 5, hy - 7, 4, 1, hrL); if (hs === 'west') R(hx - 3, hy - 8, 1, 5, shade(hr, -.3));
+      E(hx, hy - 4, 8 + big * .5, 5, hr); R(hx - 8, hy - 4, 2, hs === 'west' ? 9 : 7, hr); R(hx + 6, hy - 4, 2, hs === 'west' ? 9 : 7, hrD);
+      // 前髪の房（ぎざぎざ）
+      const tufts = hs === 'west' ? [[-6, 2], [-3, 3], [2, 2], [5, 2]] : hs === 'kid' ? [[-7, 3], [-4, 4], [-1, 3], [2, 4], [5, 3]] : [[-6, 3], [-3, 2], [0, 3], [3, 2], [5, 3]];
+      for (const [i, h] of tufts) R(hx + i, hy - 1, 2, h, hr);
+      if (hs === 'west') { R(hx - 2, hy - 8, 1, 7, hrD); E(hx + 3, hy - 6, 4, 2, hrL); }
+      else { R(hx - 5, hy - 7, 4, 1, hrL); R(hx - 3, hy - 8, 3, 1, hrL); for (const i of [-6, -1, 4]) R(hx + i, hy - 10, 2, 2, hr); }
     } else if (hs === 'woman') {
-      E(hx, hy - 4, 9, 5, hr); E(hx, hy - 10, 6.5, 4, hr); R(hx - 10, hy - 2, 3, 7, hr); R(hx + 7, hy - 2, 3, 7, hr); R(hx - 7, hy - 9, 14, 1.5, '#d8b040'); R(hx + 4, hy - 12, 1, 4, '#d8b040'); E(hx - 3, hy - 11, 2, 1, hrL);
-    } else if (hs === 'bald') { R(hx - 4, hy - 6, 3, 1, '#fff6e6'); }
+      E(hx, hy - 4, 8.5, 5, hr); E(hx, hy - 10, 6.5, 4, hr); E(hx - 8, hy - 2, 2.5, 4, hr); E(hx + 8, hy - 2, 2.5, 4, hrD);
+      R(hx - 7, hy - 9, 14, 1.5, '#d8b040'); R(hx + 5, hy - 13, 1, 5, '#d8b040'); E(hx + 5.5, hy - 13.5, 1.4, 1.4, '#e85a7a'); E(hx - 3, hy - 12, 2.5, 1, hrL); R(hx - 1, hy - 2, 1, 1, hrD);
+    } else if (hs === 'bald') { E(hx - 3, hy - 4, 2, 1, '#fff6e6'); }
     // 顔
-    const ey = hy + 2, big2 = p.eyes === 'big';
-    if (p.eyes === 'narrow') { R(hx - 5, ey + 1, 3, 1, '#1a1214'); R(hx + 2, ey + 1, 3, 1, '#1a1214'); }
-    else if (p.eyes === 'closed') { R(hx - 5, ey + 1, 3, 1, '#1a1214'); R(hx - 5, ey, 1, 1, '#1a1214'); R(hx + 2, ey + 1, 3, 1, '#1a1214'); R(hx + 4, ey, 1, 1, '#1a1214'); }
-    else { R(hx - 5, ey - (big2 ? 1 : 0), 2, big2 ? 4 : 3, '#1a1214'); R(hx + 3, ey - (big2 ? 1 : 0), 2, big2 ? 4 : 3, '#1a1214'); if (s > 1 || big2) { R(hx - 5, ey - (big2 ? 1 : 0), 1, 1, '#ffffff'); R(hx + 3, ey - (big2 ? 1 : 0), 1, 1, '#ffffff'); } }
-    if (p.brow) { R(hx - 6, ey - 3, 4, p.brow, hr); R(hx + 2, ey - 3, 4, p.brow, hr); }
-    R(hx - 1, ey + 5, 2, 1, '#a8544a');
+    const ey = hy + 1, sx = big ? 1 : 0;
+    if (p.eyes === 'narrow') { R(hx - 5 - sx, ey + 1, 3, 1, ink); R(hx + 2 + sx, ey + 1, 3, 1, ink); }
+    else if (p.eyes === 'closed') { R(hx - 5 - sx, ey + 1, 3, 1, ink); R(hx - 5 - sx, ey, 1, 1, ink); R(hx + 2 + sx, ey + 1, 3, 1, ink); R(hx + 4 + sx, ey, 1, 1, ink); }
+    else {
+      const bg = p.eyes === 'big' ? 1 : 0;
+      R(hx - 5 - sx, ey - bg, 3, 1, ink); R(hx + 2 + sx, ey - bg, 3, 1, ink);
+      R(hx - 5 - sx, ey + 1 - bg, 1, 2 + bg, white); R(hx - 4 - sx, ey + 1 - bg, 2, 2 + bg, iris); R(hx - 4 - sx, ey + 1 - bg, 1, 1, '#ffffff');
+      R(hx + 4 + sx, ey + 1 - bg, 1, 2 + bg, white); R(hx + 2 + sx, ey + 1 - bg, 2, 2 + bg, iris); R(hx + 2 + sx, ey + 1 - bg, 1, 1, '#ffffff');
+    }
+    if (p.brow) { R(hx - 6 - sx, ey - 2 - (p.brow > 1 ? 1 : 0), 4, p.brow, hr); R(hx + 2 + sx, ey - 2 - (p.brow > 1 ? 1 : 0), 4, p.brow, hr); }
+    R(hx, ey + 3, 1, 1, skD); R(hx - 1, ey + 5, 3, 1, '#a04a42');
     if (p.blush) { R(hx - 7, ey + 3, 2, 1, '#f09a90'); R(hx + 5, ey + 3, 2, 1, '#f09a90'); }
-    if (p.beard) { R(hx - 7, ey + 3, 2, 5, p.beard); R(hx + 5, ey + 3, 2, 5, p.beard); R(hx - 5, ey + 7, 10, 2, p.beard); R(hx - 2, ey + 4, 4, 1, p.beard); }
+    if (p.beard) { R(hx - 7, ey + 2, 2, 5, p.beard); R(hx + 5, ey + 2, 2, 5, p.beard); R(hx - 5, ey + 6, 10, 2, p.beard); R(hx - 3, ey + 4, 2, 1, p.beard); R(hx + 1, ey + 4, 2, 1, p.beard); }
   } else {
-    if (hs !== 'bald') { E(hx + 2, hy - 2, 8, 6, hr); R(hx + 2, hy - 2, 7, 9, hr); R(hx - 3, hy - 6, 5, 1, hrL); }
-    if (hs === 'mage' || hs === 'boy') { E(hx - 1, hy - 4, 5, 3, p.pate || mix(sk, '#a8b8d0', .3)); R(hx, hy - 10, 7, 3, hr); R(hx + 5, hy - 9, 3, 4, hr); if (hs === 'boy') R(hx - 7, hy - 5, 5, 3, hr); }
-    if (hs === 'woman') { E(hx + 2, hy - 9, 6, 4, hr); R(hx - 3, hy - 8, 12, 1.5, '#d8b040'); }
-    R(hx - 9, hy + 2, 2, 2, sk);
-    if (p.eyes === 'narrow' || p.eyes === 'closed') R(hx - 6, hy + 3, 3, 1, '#1a1214'); else R(hx - 6, hy + 2, 2, 3, '#1a1214');
-    if (p.brow) R(hx - 7, hy - 1, 4, p.brow, hr);
+    // 横向き
+    if (hs !== 'bald') { E(hx + 2, hy - 2, 7, 6, hr); R(hx + 2, hy - 2, 6, 9, hr); R(hx + 5, hy + 1, 3, 6, hrD); R(hx - 2, hy - 7, 5, 1, hrL); }
+    if (hs === 'mage' || hs === 'boy') { E(hx - 1, hy - 4, 4.5, 3, pate); R(hx - 1, hy - 10, 7, 3, hr); R(hx - 1, hy - 10, 6, 1, hrL); R(hx + 4, hy - 9, 3, 4, hr); R(hx + 3, hy - 8, 1, 3, '#ece4d4'); if (hs === 'boy') R(hx - 7, hy - 5, 5, 3, hr); }
+    if (hs === 'short' || hs === 'kid' || hs === 'west') { R(hx - 6, hy - 5, 5, 3, hr); R(hx - 6, hy - 2, 2, 2, hr); R(hx - 3, hy - 9, 6, 2, hr); }
+    if (hs === 'woman') { E(hx + 2, hy - 9, 6, 4, hr); E(hx + 7, hy + 3, 3, 3, hr); R(hx - 3, hy - 8, 12, 1.5, '#d8b040'); }
+    if (p.eyes === 'narrow' || p.eyes === 'closed') R(hx - 5, hy + 2, 3, 1, ink);
+    else { R(hx - 5, hy + 1, 3, 1, ink); R(hx - 5, hy + 2, 2, 2, iris); R(hx - 3, hy + 2, 1, 2, white); R(hx - 5, hy + 2, 1, 1, '#fff'); }
+    if (p.brow) R(hx - 6, hy - 1, 4, p.brow, hr);
     if (p.beard) { R(hx - 7, hy + 6, 9, 3, p.beard); R(hx, hy + 2, 3, 6, p.beard); }
-    R(hx + 3, hy + 2, 2, 3, skD);
+    R(hx - 7, hy + 6, 2, 1, '#a04a42');
+    E(hx + 1, hy + 2, 1.5, 2, skD);
   }
-  // 帽子
+  // ---- 帽子 ----
   const H = p.hat;
-  if (H === 'jingasa') { E(hx, hy - 6, 12, 2.5, '#2a2420'); E(hx, hy - 8, 7, 3, '#3a322c'); R(hx - 1, hy - 9, 2, 2, '#c8a040'); }
-  if (H === 'kasa') { for (let y = 0; y < 7; y++) R(hx - 3 - y * 1.6, hy - 12 + y, 6 + y * 3.2, 1, y % 2 ? '#c8a86a' : '#b8985a'); }
+  if (H === 'jingasa') { E(hx, hy - 6, 12, 2.5, '#2a2420'); E(hx, hy - 7, 12, 1, '#4a4038'); E(hx, hy - 8, 7, 3, '#3a322c'); E(hx - 2, hy - 9, 3, 1, '#5a5048'); R(hx - 1, hy - 10, 2, 2, '#c8a040'); }
+  if (H === 'kasa') { for (let y = 0; y < 8; y++) R(hx - 3 - y * 1.6, hy - 13 + y, 6 + y * 3.2, 1, y % 2 ? '#c8a86a' : '#b8985a'); R(hx - 15, hy - 5, 30, 1, '#8a6a3a'); }
   if (H === 'cap') { E(hx, hy - 7, 8, 3, '#f4f4f4'); R(hx - 8, hy - 6, 16, 2, '#1a2440'); }
-  if (H === 'shako') { R(hx - 6, hy - 14, 12, 9, '#1a1a1a'); R(hx - 6, hy - 7, 12, 2, '#c8a040'); R(hx - 1, hy - 13, 2, 3, '#e0e0e0'); }
-  if (H === 'bicorne') { E(hx, hy - 8, 12, 3.5, '#1a1a2a'); R(hx - 1, hy - 11, 2, 2, '#c8a040'); }
-  if (H === 'kepi') { R(hx - 7, hy - 11, 14, 6, p.hatc || '#1a2244'); R(hx - 7, hy - 7, 14, 2, '#c02020'); if (d !== 3) R(hx - 8 + (d === 1 ? -2 : 0), hy - 5, d === 1 ? 7 : 16, 2, '#111'); }
-  if (H === 'hachimaki') { R(hx - 9, hy - 3, 18, 2, '#f4f4f4'); if (d === 1) R(hx + 8, hy - 3, 4, 4, '#f4f4f4'); }
-  if (H === 'eboshi') { R(hx - 4, hy - 16, 8, 10, '#1a1a1a'); R(hx - 3, hy - 16, 3, 10, '#2e2e2e'); }
-  if (H === 'zukin') { E(hx, hy - 2, 9.5, 9, p.hatc || '#3a3a5a'); E(hx - 1, hy + 2, 6, 4, sk); R(hx - 5, hy + 1, 2, 2, '#1a1214'); R(hx + 2, hy + 1, 2, 2, '#1a1214'); }
+  if (H === 'shako') { R(hx - 6, hy - 15, 12, 10, '#1a1a1a'); R(hx - 6, hy - 15, 2, 10, '#3a3a3a'); R(hx - 6, hy - 7, 12, 2, '#c8a040'); R(hx - 1, hy - 14, 2, 3, '#e0e0e0'); }
+  if (H === 'bicorne') { E(hx, hy - 8, 12, 3.5, '#1a1a2a'); E(hx - 3, hy - 10, 5, 1, '#3a3a4a'); R(hx - 1, hy - 11, 2, 2, '#c8a040'); }
+  if (H === 'kepi') { const hc = p.hatc || '#1a2244'; R(hx - 7, hy - 12, 14, 7, hc); R(hx - 7, hy - 12, 3, 7, shade(hc, .25)); R(hx - 7, hy - 7, 14, 2, '#c02020'); if (d !== 3) R(hx - 8 + (d === 1 ? -2 : 0), hy - 5, d === 1 ? 7 : 16, 2, '#111'); if (d === 0) R(hx - 1, hy - 11, 2, 2, '#e0c040'); }
+  if (H === 'hachimaki') { R(hx - 8, hy - 3, 16, 2, '#f4f4f4'); R(hx - 8, hy - 2, 16, 1, '#d0d0d0'); if (d === 1) { R(hx + 7, hy - 3, 3, 2, '#f4f4f4'); R(hx + 9, hy - 2, 3, 4, '#f4f4f4'); } if (d === 3) { R(hx - 2, hy - 3, 4, 3, '#f4f4f4'); R(hx - 3, hy, 2, 4, '#f4f4f4'); R(hx + 1, hy, 2, 4, '#e0e0e0'); } }
+  if (H === 'eboshi') { R(hx - 4, hy - 17, 8, 11, '#1a1a1a'); R(hx - 3, hy - 17, 3, 11, '#2e2e2e'); }
+  if (H === 'zukin') { E(hx, hy - 2, 8.5, 8.5, p.hatc || '#3a3a5a'); E(hx - 3, hy - 5, 3, 2, shade(p.hatc || '#3a3a5a', .2)); if (d === 0) { E(hx, hy + 2, 5.5, 3.5, sk); R(hx - 4, hy + 1, 2, 2, ink); R(hx + 2, hy + 1, 2, 2, ink); } }
 }
 // 戦闘用の構え（武器を持つ）
 function paintPose(x, p, s) {
@@ -392,10 +586,65 @@ function enemyImg(id) {
 }
 
 // ---------- 背景（512x384） ----------
+// 桜島の形：北岳（高い）と南岳（低く、噴煙）の二つの峰。左から光が当たる
 function volcano(x, cx, base, w, h, col, smoke) {
-  for (let i = 0; i < h; i++) { const ww = w * (0.14 + 0.86 * Math.pow(i / h, .9)); P(x, cx - ww / 2, base - h + i, ww, 1, mix(shade(col, .12), col, i / h)); }
-  P(x, cx - w * .07, base - h, w * .14, 3, shade(col, -.3));
-  if (smoke) for (let i = 0; i < 6; i++) disc(x, cx - 4 + i * 9, base - h - 10 - i * 12, 8 + i * 2, mix(smoke, '#ffffff', i * .05));
+  const r = rnd(cx + h), A = cx - w * .06, B = cx + w * .1, hB = h * .82, lit = shade(col, .3), dk = shade(col, -.4);
+  for (let i = 0; i < h; i++) {
+    const y = base - h + i, ta = i / h, tb = Math.max(0, (i - (h - hB)) / hB);
+    const wa = w * (0.05 + 0.95 * Math.pow(ta, .85)) / 2, wb = tb > 0 ? w * (0.06 + 0.9 * Math.pow(tb, .85)) / 2 : -1;
+    const l = Math.round(Math.min(A - wa, wb > 0 ? B - wb : 1e9)), rr = Math.round(Math.max(A + wa, wb > 0 ? B + wb : -1e9));
+    for (let px = l; px < rr; px += 2) {
+      const u = (px - l) / Math.max(1, rr - l);
+      let c = mix(lit, dk, Math.min(1, u * 1.1 + (r() - .5) * .12));
+      if (i > h * .72) c = mix(c, shade(col, -.1), (i - h * .72) / (h * .28) * .5);
+      P(x, px, y, 2, 1, c);
+    }
+  }
+  // 谷筋（雨で削られた筋）
+  for (let k = -5; k <= 5; k++) { if (!k) continue; for (let i = Math.round(h * .12); i < h * .95; i += 1) { const t = i / h, gx = A + k * (w * .085) * Math.pow(t, .9) + Math.sin(i * .3 + k) * .6; if (r() < .85) { P(x, gx, base - h + i, 1, 1, shade(col, -.25)); P(x, gx - 1, base - h + i, 1, 1, shade(col, .18)); } } }
+  P(x, A - 3, base - h, 6, 2, shade(col, -.35));
+  disc(x, B, base - hB + 1, 3, shade(col, -.5));
+  if (smoke) for (let i = 0; i < 7; i++) { const sx = B + i * 8 + Math.sin(i) * 3, sy = base - hB - 8 - i * 11; disc(x, sx, sy, 6 + i * 2, mix(smoke, '#ffffff', i * .05)); disc(x, sx - 2, sy - 2, 3 + i, mix(smoke, '#ffffff', .4)); }
+}
+// 木は一段高い一枚絵にして、人物が木の陰に回り込めるようにする（40x60、根元がタイルの下端）
+const TREE_CACHE = {};
+function treeImg(ch, v) {
+  const k = ch + v; if (TREE_CACHE[k]) return TREE_CACHE[k];
+  const c = mk(40, 60), x = c.getContext('2d'), r = rnd(v * 13 + ch.charCodeAt(0));
+  ell(x, 22, 55, 14, 4, 'rgba(0,0,0,.3)');
+  if (ch === 'T') {
+    const g = [['#2b5f28', '#3a7a33', '#4f9440', '#6ab052'], ['#2f5a2a', '#3e7236', '#56904a', '#78b060'], ['#24502a', '#336c38', '#4a8a46', '#64a858']][v % 3], s = v % 3 === 1 ? 1 : 0;
+    P(x, 17, 34, 6, 22, '#5a3a20'); P(x, 17, 34, 2, 22, '#7a5230'); P(x, 21, 34, 2, 22, '#432a16'); P(x, 14, 53, 12, 3, '#5a3a20');
+    disc(x, 20, 24 - s, 15, g[0]); disc(x, 11, 30, 8, g[0]); disc(x, 29, 30, 8, g[0]);
+    disc(x, 18, 20 - s, 11, g[1]); disc(x, 26, 24, 7, g[1]); disc(x, 11, 27, 6, g[1]);
+    disc(x, 15, 15 - s, 6, g[2]); disc(x, 24, 18, 4, g[2]); P(x, 12, 11 - s, 4, 2, g[3]); P(x, 22, 15, 3, 2, g[3]); P(x, 9, 24, 3, 2, g[2]);
+    for (let i = 0; i < 14; i++) P(x, 8 + r() * 24, 14 + r() * 22, 2, 1, r() < .5 ? g[0] : g[2]);
+    outline(c, '#173a16');
+  } else {
+    P(x, 18, 30, 4, 26, '#6b4426'); P(x, 18, 30, 1, 26, '#8a5a30');
+    const tiers = [[42, 17, '#24502a'], [33, 14, '#2d6233'], [24, 11, '#356f3a'], [16, 7, '#3e7a42']];
+    for (const [y, w, col] of tiers) { ell(x, 20 + (v % 2 ? 1 : -1), y, w, 4, col); P(x, 20 - w + 4, y - 2, w, 1, shade(col, .35)); }
+    outline(c, '#122a14');
+  }
+  return (TREE_CACHE[k] = c);
+}
+// マップ用の桜島（224x176）。海の上に、裾野の緑と波打ち際まで描いて「浮いて見えない」ようにする
+let SAKURA_IMG = null;
+function sakurajimaImg() {
+  if (SAKURA_IMG) return SAKURA_IMG;
+  const W = 224, H = 176, c = mk(W, H), x = c.getContext('2d'), r = rnd(1914), cx = 116, base = 148;
+  ell(x, cx + 6, base + 8, 112, 22, 'rgba(8,24,52,.45)');
+  ell(x, cx, base + 2, 108, 22, '#e2f0fa'); ell(x, cx, base + 1, 106, 21, '#d8c48c'); ell(x, cx, base - 1, 104, 20, '#3e6e34');
+  for (let i = 0; i < 120; i++) { const a = r() * Math.PI * 2, d = Math.sqrt(r()); const px = cx + Math.cos(a) * 98 * d, py = base - 1 + Math.sin(a) * 18 * d; disc(x, px, py, 2 + (r() * 3 | 0), r() < .5 ? '#2e5a2a' : '#4a8a3c'); }
+  // 大正の溶岩原
+  for (let i = 0; i < 26; i++) disc(x, cx + 30 + r() * 60, base - 6 + r() * 14, 2 + (r() * 3 | 0), r() < .5 ? '#3a3430' : '#4e4640');
+  volcano(x, cx, base - 6, 196, 120, '#7a6658', null);
+  // 中腹から下の森
+  for (let i = 0; i < 90; i++) { const t = r(), y = base - 34 + t * 26, half = 60 + t * 34, px = cx - half + r() * half * 2; disc(x, px, y, 2 + (r() * 2 | 0), px < cx ? '#4f8a40' : '#2f5a2c'); }
+  // 南岳の火口の赤み
+  disc(x, cx + 19, base - 6 - 98 + 2, 2, '#c84a1a');
+  outline(c, '#1a1410');
+  return (SAKURA_IMG = c);
 }
 function band(x, top, bot, y0, y1, w = 512) { const n = 24; for (let i = 0; i < n; i++) P(x, 0, y0 + (y1 - y0) * i / n, w, Math.ceil((y1 - y0) / n) + 1, mix(top, bot, i / (n - 1))); }
 function hills(x, y, amp, col, seed, w = 512) { for (let i = 0; i < w; i += 2) P(x, i, y - Math.sin(i / 40 + seed) * amp - Math.sin(i / 13 + seed * 2) * amp * .3, 2, 300, col); }

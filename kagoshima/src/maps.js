@@ -3,7 +3,18 @@
 function grid(w, h, f) { return Array.from({ length: h }, () => Array(w).fill(f)); }
 function rect(g, x, y, w, h, c) { for (let j = y; j < y + h; j++) for (let i = x; i < x + w; i++) if (g[j] && i >= 0 && i < g[j].length) g[j][i] = c; }
 function frame(g, x, y, w, h, c) { rect(g, x, y, w, 1, c); rect(g, x, y + h - 1, w, 1, c); rect(g, x, y, 1, h, c); rect(g, x + w - 1, y, 1, h, c); }
-function house(g, x, y, w, door, roof = 'H') { rect(g, x, y, w, 2, roof); rect(g, x, y + 2, w, 1, 'h'); g[y + 2][door] = 'D'; return [door, y + 2]; }
+// 家：タイルは当たり判定とミニマップ用。見た目は _BLD に記録し、gfx.js の bldImg で一枚絵として描く
+let _BLD = [];
+function house(g, x, y, w, door, roof = 'H') {
+  rect(g, x, y, w, 2, roof); rect(g, x, y + 2, w, 1, 'h'); g[y + 2][door] = 'D';
+  const v = (x * 7 + y * 13 + w * 3) % 5, b = { x, y, w, door, roofCh: roof, roof: ['hip', 'gable', 'irimoya', 'hip', 'gable'][v] };
+  // 幅のある家は、片側に一段低い棟（離れ）をつけて形を変える
+  if (roof === 'H' && w >= 5 && (v === 1 || v === 3)) {
+    b.wing = v === 1 ? 'L' : 'R'; const c0 = b.wing === 'L' ? x : x + w - 2;
+    for (let i = c0; i < c0 + 2; i++) { const a = g[y - 1] && g[y - 1][i]; g[y][i] = a && '.,su;'.includes(a) ? a : '.'; }
+  }
+  _BLD.push(b); return [door, y + 2];
+}
 function dots(g, c, list) { for (const [x, y] of list) if (g[y] && g[y][x] !== undefined) g[y][x] = c; }
 function border(g, c = 'T') { const h = g.length, w = g[0].length; rect(g, 0, 0, w, 1, c); rect(g, 0, h - 1, w, 1, c); rect(g, 0, 0, 1, h, c); rect(g, w - 1, 0, 1, h, c); }
 const pot = (x, y, id, item, n) => ({ x, y, spr: 'pot', pot: id, item, n });
@@ -28,7 +39,7 @@ const MAPS = {
       H.push(house(g, 2, 2, 4, 3), house(g, 11, 2, 4, 12), house(g, 19, 2, 4, 20));
       H.push(house(g, 2, 8, 5, 4), house(g, 10, 8, 4, 11), house(g, 16, 8, 5, 18));
       H.push(house(g, 10, 13, 5, 12), house(g, 16, 13, 4, 17), house(g, 21, 13, 4, 22));
-      rect(g, 22, 8, 2, 2, 'H'); g[10][22] = F('kuraOpen') ? 'D' : 'L'; g[10][23] = 'h';
+      rect(g, 22, 8, 2, 2, 'H'); g[10][22] = F('kuraOpen') ? 'D' : 'L'; g[10][23] = 'h'; _BLD.push({ x: 22, y: 8, w: 2, door: 22, style: 'kura' });
       rect(g, 1, 17, 7, 1, 'g'); rect(g, 1, 22, 7, 1, 'g'); rect(g, 1, 17, 1, 6, 'g'); rect(g, 7, 17, 1, 6, 'g');
       rect(g, 2, 18, 5, 4, 'W'); g[19][7] = 'W';
       dots(g, 'K', [[2, 19], [4, 19]]);
@@ -112,7 +123,6 @@ const MAPS = {
       rect(g, 0, 0, 30, 6, '.'); rect(g, 0, 0, 30, 1, 'T'); rect(g, 0, 0, 1, 15, 'T'); rect(g, 29, 0, 1, 6, 'T');
       rect(g, 8, 0, 1, 7, ',');
       rect(g, 0, 15, 30, 7, '~'); rect(g, 22, 6, 8, 9, '~'); rect(g, 0, 19, 30, 3, 'o');
-      rect(g, 25, 8, 4, 4, 'M'); g[8][26] = 'm'; g[8][27] = 'm';
       rect(g, 12, 15, 1, 4, 'p');
       dots(g, '#', [[15, 14], [17, 14], [19, 14], [21, 14]]); dots(g, 'C', [[16, 14], [18, 14], [20, 14]]);
       dots(g, 'P', [[2, 7], [5, 6], [10, 6], [14, 7], [19, 6], [3, 11], [20, 9]]);
@@ -120,7 +130,7 @@ const MAPS = {
       if (G.chapter === 1 && !F('ch1end')) dots(g, 'S', [[4, 18], [9, 20], [16, 19], [20, 17], [25, 16], [15, 21], [27, 19]]);
       if (F('bombarded') && !F('ch1end')) dots(g, 'f', [[17, 13], [19, 12], [2, 5]]);
       return {
-        name: '錦江湾の浜・天保山砲台', g, bbg: 'beach', encTiles: ['s'], place: 'tenpozan', bgm: () => G.night ? 'night' : (G.chapter === 1 && !F('ch1end')) ? 'war' : 'field',
+        name: '錦江湾の浜・天保山砲台', g, props: [{ x: 22, y: 6, img: 'sakurajima', smoke: [137, 46] }], bbg: 'beach', encTiles: ['s'], place: 'tenpozan', bgm: () => G.night ? 'night' : (G.chapter === 1 && !F('ch1end')) ? 'war' : 'field',
         night: () => F('gesshoQuest') && !F('gessho'),
         weather: () => G.chapter === 1 && F('seizure') && !F('euryalus') ? 'rain' : G.chapter === 0 ? 'ash' : null,
         enc: () => (G.chapter === 1 && F('ch1brief') && !F('euryalus')) ? ENC.kaigan1 : null, rare: RARE.early,
@@ -195,7 +205,7 @@ const MAPS = {
           npc(9, 13, 'oryo', (n) => STORY.talk('oryo', n), { cond: () => G.chapter === 3 }),
           npc(10, 11, 'saigo', STORY.onsen8, { cond: () => G.chapter === 8 && !F('onsen8'), mark: true }),
           npc(14, 16, 'umakata', () => rentHorse(40)), npc(13, 16, 'horse', () => rentHorse(40)),
-          chest(29, 20, 'kr1', 'kurobuta'), pot(2, 20, 'kr2', 'mikan'), chest(20, 3, 'kr3', 'kubiwa'),
+          chest(29, 20, 'kr1', 'kurobuta'), pot(2, 20, 'kr2', 'mikan'), chest(18, 5, 'kr3', 'kubiwa'),
         ],
       };
     },
@@ -205,7 +215,7 @@ const MAPS = {
     build() {
       const g = grid(36, 26, ';'); border(g, '#');
       const H = [];
-      for (let yy = 2; yy < 20; yy += 7) for (let xx = 2; xx < 34; xx += 8) { if (xx === 2 && yy === 2) continue; if (xx >= 26 && yy >= 16) continue; const hh = house(g, xx, yy, 6, xx + 3); H.push(hh); }
+      for (let yy = 2; yy < 20; yy += 7) for (let xx = 2; xx < 34; xx += 8) { if (xx <= 10 && yy === 2) continue; if (xx >= 26 && yy >= 16) continue; const hh = house(g, xx, yy, 6, xx + 3); H.push(hh); }
       rect(g, 2, 2, 12, 6, '#'); rect(g, 3, 3, 10, 4, ','); const hantei = house(g, 4, 3, 7, 7); g[7][7] = ','; g[4][12] = F('hanzoOpen') ? 'D' : 'L'; g[3][12] = 'H';
       rect(g, 26, 16, 8, 8, '.'); dots(g, 'T', [[27, 17], [32, 17], [27, 22], [32, 22]]); dots(g, 'J', [[29, 19]]); dots(g, 'l', [[28, 20], [31, 20]]);
       g[0][18] = ';'; g[25][18] = ';';
@@ -221,7 +231,7 @@ const MAPS = {
         houses: [
           hs(...hantei, '薩摩藩邸（二本松）', { w: 15, place: 'hamaguri', npcs: [npc(7, 4, 'komatsu', STORY.komatsu, { mark: true }), npc(3, 4, 'kido', STORY.kido3, { cond: () => G.chapter === 3 && !F('satcho') }), npc(11, 4, 'ryoma', STORY.ryoma3, { cond: () => G.chapter === 3 && !F('satcho') })], items: [chest(13, 5, 'hantei1', 'key_hanzo')] }),
           { x: 12, y: 4, name: '藩邸の蔵', kind: 'kura', w: 9, h: 7, items: [chest(2, 3, 'hz1', 'masakiyo'), chest(6, 3, 'hz2', 'kurobuta', 3), chest(4, 5, 'hz3', 'kiriko')] },
-          ...H.map((h, i) => hs(...h, ['京の町家', '武具屋', '道具屋', '茶屋', '町家', '宿屋', '町家', '寺', '町家', '町家', '町家', '町家', '町家'][i] || '町家', i === 1 ? { kind: 'shop', npcs: [npc(5, 3, 'merchant', () => shopTalk('kyoto'))] } : i === 2 ? { kind: 'shop', npcs: [npc(5, 3, 'merchant', () => shopTalk('kyotoDougu'))] } : i === 5 ? { npcs: [npc(5, 4, 'innkeeper', STORY.inn)] } : i === 7 ? { npcs: [npc(5, 4, 'monk', T('kyotoMonk'))] } : { npcs: [npc(5, 4, i % 2 ? 'woman' : 'elder', T('kyoto' + (i % 3)))], items: i % 3 === 0 ? [pot(8, 4, 'kh' + i, ['chiran', 'tsukeage', 'horoku', 'karukan'][i % 4])] : [] })),
+          ...H.map((h, i) => hs(...h, ['武具屋', '道具屋', '茶屋', '町家', '宿屋', '町家', '寺', '町家', '町家', '町家', '町家', '町家'][i] || '町家', i === 0 ? { kind: 'shop', npcs: [npc(5, 3, 'merchant', () => shopTalk('kyoto'))] } : i === 1 ? { kind: 'shop', npcs: [npc(5, 3, 'merchant', () => shopTalk('kyotoDougu'))] } : i === 4 ? { npcs: [npc(5, 4, 'innkeeper', STORY.inn)] } : i === 6 ? { npcs: [npc(5, 4, 'monk', T('kyotoMonk'))] } : { npcs: [npc(5, 4, i % 2 ? 'woman' : 'elder', T('kyoto' + (i % 3)))], items: i % 3 === 0 ? [pot(8, 4, 'kh' + i, ['chiran', 'tsukeage', 'horoku', 'karukan'][i % 4])] : [] })),
         ],
         npcs: [
           npc(16, 8, 'woman', T('kyotoA')), npc(24, 15, 'elder', T('kyotoB')), npc(9, 22, 'child', T('kyotoC')),

@@ -249,9 +249,38 @@ function passable(x, y) { const t = tileAt(x, y); if (SOLID.has(t)) return false
 function houseAt(x, y) { return (G.map.houses || []).find(h => h.x === x && h.y === y); }
 function buildMap(id) {
   const def = MAPS[id] || ROOMS[id];
-  const m = def.build(); m.h = m.g.length; m.w = m.g[0].length; m.id = id;
+  _BLD = []; const m = def.build(); m.h = m.g.length; m.w = m.g[0].length; m.id = id;
+  setupBuildings(m); setupEdges(m); m.props = m.props || [];
   m.npcs = (m.npcs || []).map(n => ({ ...n, dir0: n.dir || 0, dir: n.dir || 0 })); m.warps = m.warps || []; m.triggers = m.triggers || [];
   m.mini = null; return m;
+}
+// 建物の見た目（名前から種類と看板を決める）と、建物の下に敷く地面
+const KAYA_MAPS = ['kirishima', 'enodake', 'aizu', 'kotsuki', 'tabaru', 'kumamoto'];
+const SIGNS = [[/鍛冶/, '鍛冶', '#3a3a40'], [/武具/, '武具', '#5a2020'], [/道具/, '道具', '#2a3a6a'], [/寺田屋/, '寺田屋', '#6a2a2a'], [/宿/, '宿', '#7a2a2a'], [/茶屋/, '茶', '#3a5a2a'], [/蕎麦/, '蕎麦', '#4a3020']];
+function setupBuildings(m) {
+  m.blds = _BLD; m.bmask = null; if (!m.blds.length) return;
+  m.bmask = new Array(m.w * m.h).fill(null);
+  for (const b of m.blds) {
+    const h = (m.houses || []).find(h => h.x === b.door && h.y === b.y + 2), nm = h ? h.name : '';
+    if (!b.style) b.style = b.roofCh === 'Q' && m.id === 'tokyo' ? 'yoko' : /蔵/.test(nm) ? 'kura' : /寺/.test(nm) && !/寺田屋/.test(nm) ? 'tera' : /陣|本営/.test(nm) ? 'jin'
+      : /屋|宿|町家/.test(nm) ? 'machiya' : (KAYA_MAPS.includes(m.id) || /村|民家/.test(nm)) ? 'kaya' : 'buke';
+    const sg = SIGNS.find(s => s[0].test(nm)); if (sg) { b.sign = sg[1]; b.noren = sg[2]; }
+    b.locked = m.g[b.y + 2][b.door] === 'L';
+    let burnt = false; for (let j = b.y; j < b.y + 3; j++) for (let i = b.x; i < b.x + b.w; i++) if ('rf'.includes(m.g[j][i])) burnt = true;
+    b.skip = burnt; if (burnt) continue;
+    // 屋根の隅から見える地面は、家の裏（一つ上の段）と同じにする
+    for (let i = b.x; i < b.x + b.w; i++) {
+      const a = m.g[b.y - 1] && m.g[b.y - 1][i], ground = a && '.,;su'.includes(a) ? a : '.';
+      for (let j = b.y; j < b.y + 3; j++) if (SOLID.has(m.g[j][i]) || m.g[j][i] === 'D') m.bmask[j * m.w + i] = ground;
+    }
+  }
+}
+function setupEdges(m) {
+  m.vmap = new Uint8Array(m.w * m.h);
+  for (let y = 0; y < m.h; y++) for (let x = 0; x < m.w; x++) {
+    const i = y * m.w + x, ch = (m.bmask && m.bmask[i]) || m.g[y][x];
+    m.vmap[i] = ((x * 7 + y * 13) % 5 === 0 ? 1 : (x * 3 + y * 5) % 7 === 0 ? 2 : 0) | (edgeBits(m, x, y, ch) << 4);
+  }
 }
 function enterMap(id, x, y, dir = 0) {
   const m = buildMap(id);
@@ -396,11 +425,12 @@ function cam() {
 function drawMap() {
   const m = G.map, { ppx, ppy, t, cx, cy } = cam();
   ctx.fillStyle = '#000'; ctx.fillRect(0, 0, CW, CH);
-  const af = (G.frame >> 4) & 3, fires = [];
-  for (let y = Math.floor(cy / TS); y <= Math.floor((cy + CH) / TS); y++) for (let x = Math.floor(cx / TS); x <= Math.floor((cx + CW) / TS); x++) {
+  const af = (G.frame >> 4) & 3, fires = [], trees = [];
+  for (let y = Math.floor(cy / TS); y <= Math.floor((cy + CH) / TS) + 1; y++) for (let x = Math.floor(cx / TS); x <= Math.floor((cx + CW) / TS); x++) {
     if (x < 0 || y < 0 || x >= m.w || y >= m.h) continue;
-    const ch = m.g[y][x];
-    ctx.drawImage(tileImg(ch, ANIM.has(ch) ? (ch === '~' || ch === 'o' ? af : af & 1) : 0, (x * 7 + y * 13) % 5 === 0 ? 1 : (x * 3 + y * 5) % 7 === 0 ? 2 : 0), x * TS - cx, y * TS - cy);
+    let ch = (m.bmask && m.bmask[y * m.w + x]) || m.g[y][x];
+    if (ch === 'T' || ch === 'P') { trees.push([x, y, ch]); ch = ch === 'T' ? '.' : 's'; }
+    ctx.drawImage(tileImg(ch, ANIM.has(ch) ? (ch === '~' || ch === 'o' ? af : af & 1) : 0, m.vmap[y * m.w + x]), x * TS - cx, y * TS - cy);
     if (ch === 'f') fires.push([x * TS - cx, y * TS - cy]);
     if (ch === 'f' && Math.random() < .35) G.parts.push({ kind: 'fire', x: x * TS + 4 + Math.random() * 24, y: y * TS + 26, vx: (Math.random() - .5) * .3, vy: -.6 - Math.random() * .8, life: 30 + Math.random() * 25, t: 0 });
     if (ch === 'f' && Math.random() < .04) G.parts.push({ kind: 'smoke', x: x * TS + 16, y: y * TS + 4, vx: .2 + Math.random() * .3, vy: -.4, life: 120, t: 0 });
@@ -412,11 +442,18 @@ function drawMap() {
     const still = ['pot', 'chest', 'boat', 'sign'].includes(n.spr);
     list.push({ x: nx * TS, y: ny * TS, img: charImg(n.spr, n.dir || 0, still ? 0 : n.mv ? ((G.frame >> 3) & 1) + 1 : n.idle === false ? 0 : nf) });
   }
+  for (const [tx, ty, tc] of trees) list.push({ x: tx * TS - 4, y: ty * TS - 28, img: treeImg(tc, (tx * 5 + ty * 3) % 6), sy: ty * TS - .2, raw: 1 });
+  for (const p of m.props) {
+    const im = p.img === 'sakurajima' ? sakurajimaImg() : null; if (!im) continue;
+    list.push({ x: p.x * TS, y: p.y * TS, img: im, sy: p.y * TS + im.height - 40, raw: 1 });
+    if (p.smoke && Math.random() < .1) G.parts.push({ kind: 'vsmoke', x: p.x * TS + p.smoke[0] + Math.random() * 4, y: p.y * TS + p.smoke[1], vx: .2 + Math.random() * .2, vy: -.3 - Math.random() * .15, life: 220, t: 0 });
+  }
+  for (const b of m.blds || []) { if (b.skip || (b.x + b.w) * TS < cx - 16 || b.x * TS > cx + CW + 16 || (b.y + 3) * TS < cy || (b.y - 1) * TS > cy + CH) continue; const im = bldImg(b); list.push({ x: b.x * TS + im.ox, y: b.y * TS + im.oy, img: im.c, sy: (b.y + 2) * TS - .5, raw: 1 }); }
   G.chain.forEach((f, i) => list.push({ x: (f.ox + (f.x - f.ox) * t) * TS, y: (f.oy + (f.y - f.oy) * t) * TS - .1, img: charImg(G.party[i + 1], f.dir, G.move ? wf : 0) }));
   if (G.ride) list.push({ x: ppx - 8, y: ppy - .05, img: horseImg(G.dir, G.move ? (G.frame >> 2) & 1 : 0), w: 48, h: 64, horse: 1 });
   list.push({ x: ppx, y: ppy + (G.ride ? -14 : 0), img: charImg(G.party[0], G.dir, G.ride ? 0 : wf), sy: G.ride ? ppy : null });
   list.sort((a, b) => (a.sy ?? a.y) - (b.sy ?? b.y));
-  for (const s of list) ctx.drawImage(s.img, Math.round(s.x - cx), Math.round(s.y - cy - (s.horse ? 32 : 16)));
+  for (const s of list) ctx.drawImage(s.img, Math.round(s.x - cx), Math.round(s.y - cy - (s.raw ? 0 : s.horse ? 32 : 16)));
   if (fires.length) {
     ctx.save(); ctx.globalCompositeOperation = 'lighter';
     for (const [fx0, fy0] of fires) { const g = ctx.createRadialGradient(fx0 + 16, fy0 + 16, 4, fx0 + 16, fy0 + 16, 60); g.addColorStop(0, `rgba(255,140,40,${.28 + Math.random() * .08})`); g.addColorStop(1, 'rgba(255,60,0,0)'); ctx.fillStyle = g; ctx.fillRect(fx0 - 44, fy0 - 44, 120, 120); }
@@ -454,6 +491,7 @@ function drawParticles(cx, cy) {
     switch (p.kind) {
       case 'fire': ctx.fillStyle = a > .6 ? '#fff0a0' : a > .3 ? '#ff9a30' : '#d0401a'; ctx.fillRect(x, y, a > .5 ? 3 : 2, a > .5 ? 3 : 2); break;
       case 'smoke': ctx.globalAlpha = a * .35; ctx.fillStyle = '#4a4040'; ctx.beginPath(); ctx.arc(x, y, 6 + p.t / 8, 0, 7); ctx.fill(); ctx.globalAlpha = 1; break;
+      case 'vsmoke': ctx.globalAlpha = a * .55; ctx.fillStyle = p.t < 20 ? '#8a7a70' : '#d8d4cc'; ctx.beginPath(); ctx.arc(x, y, 4 + p.t / 9, 0, 7); ctx.fill(); ctx.globalAlpha = 1; break;
       case 'steam': ctx.globalAlpha = a * .5; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x, y, 3 + p.t / 15, 0, 7); ctx.fill(); ctx.globalAlpha = 1; break;
       case 'ash': ctx.fillStyle = '#8a8a8a'; ctx.fillRect(x, y, 2, 2); break;
       case 'rain': ctx.strokeStyle = 'rgba(190,205,230,.6)'; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - 2, y + 9); ctx.stroke(); break;
@@ -462,7 +500,7 @@ function drawParticles(cx, cy) {
       case 'snow': ctx.fillStyle = '#fff'; ctx.fillRect(x + Math.sin(p.t / 20) * 2, y, 2, 2); break;
     }
   }
-  G.parts = G.parts.filter(p => p.t < p.life && p.y < cy + CH + 20 && p.y > cy - 40);
+  G.parts = G.parts.filter(p => p.t < p.life && p.y < cy + CH + 20 && p.y > cy - 80);
   if (G.parts.length > 600) G.parts.splice(0, G.parts.length - 600);
 }
 // ミニマップ
@@ -749,6 +787,8 @@ async function shop(list) {
 async function shopTalk(kind) {
   const s = SHOP_TALK[kind] || SHOP_TALK.dougu;
   await S(s[0], s[1], s[2]);
+  // 戦場の陣では、商人のそばで休める（宿のない場所でも回復できるように）
+  if (kind === 'jinchu' && await ask(s[0], '陣で 少し休んでいきもすか？（無料）', '陣で 少し休んでいきますか？（無料）')) await rest();
   await shop(SHOPS[kind]());
 }
 async function rest() { await fadeOut(); restAll(); bgm(null); SFX.play('bell'); await sleep(900); await fadeIn(); SFX.play('heal'); if (G.map && G.map.bgm) { Audio8.cur = null; bgm(typeof G.map.bgm === 'function' ? G.map.bgm() : G.map.bgm); } await N('ぐっすり眠って、みんな元気になった！'); }
@@ -791,7 +831,7 @@ function drawBattle() {
     for (let i = 0; i < 8; i++) ctx.fillRect(cx - 8 + i, e.y - 18 + i, 16 - i * 2, 1);
   }
   for (const f of B.fx) {
-    f.t += OPT.speed; const p = f.t / f.dur;
+    f.t += OPT.speed; const p = Math.min(1, f.t / f.dur);  // 5倍速で dur を越えても半径が負にならないように
     ctx.save();
     switch (f.type) {
       case 'slash': case 'chest': {
