@@ -865,6 +865,10 @@ function drawBattle() {
     if (e.alpha <= 0) continue;
     if (e.flash > 0) { e.flash--; if ((e.flash >> 1) % 2) continue; }
     ctx.globalAlpha = e.alpha; ctx.drawImage(e.img, e.x + (e.shk > 0 ? (e.shk-- % 2 ? 3 : -3) : 0), e.y + (e.d.spr.t ? 0 : bob), e.w, e.h); ctx.globalAlpha = 1;
+    if (!e.dead && e.st) {
+      const tags = ['atk', 'def', 'spd'].filter(k => est(e, k)).map(k => ST_MARK[k] + '↓').concat(e.st.bleed && e.st.bleed.t > 0 ? ['血'] : [], e.st.stun ? ['ひるみ'] : []);
+      if (tags.length) { ctx.font = '12px DotGothic16, sans-serif'; ctx.textAlign = 'center'; const tx = tags.join(' '), w = ctx.measureText(tx).width + 8; ctx.fillStyle = 'rgba(10,14,36,.8)'; ctx.fillRect(e.x + e.w / 2 - w / 2, e.y - 4, w, 15); ctx.fillStyle = '#ff9a8a'; ctx.fillText(tx, e.x + e.w / 2, e.y + 7); }
+    }
     if (e.rare && G.frame % 20 < 3) { ctx.fillStyle = '#fff'; ctx.fillRect(e.x + Math.random() * e.w, e.y + Math.random() * e.h, 2, 2); }
   }
   if (B.sel != null && B.es[B.sel] && !B.es[B.sel].dead && (G.frame >> 3) % 2) {
@@ -901,7 +905,8 @@ function updateBStat() {
     const m = G.mem[id], e = B.statEls[i]; if (!e) return;
     e.classList.toggle('dead', m.hp <= 0); e.classList.toggle('act', B.actIdx === i); e.classList.toggle('low', m.hp > 0 && m.hp < mhp(m) / 4);
     const hp = Math.max(0, m.hp / mhp(m)), ki = Math.max(0, m.ki / Math.max(1, mki(m)));
-    e.innerHTML = `<div class="bn">${esc(m.name)}<span>Lv${m.lv}</span></div><div>HP <b>${m.hp}</b><small>/${mhp(m)}</small></div><div class="bar"><i style="width:${hp * 100}%"></i></div><div>気 <b>${m.ki}</b><small>/${mki(m)}</small></div><div class="bar ki"><i style="width:${ki * 100}%"></i></div>`;
+    const chips = ['atk', 'def', 'spd'].filter(k => pst(id, k)).map(k => `<i class="up">${ST_MARK[k]}↑</i>`).join('') + (B.pb[id] && B.pb[id].regen && B.pb[id].regen.t > 0 ? '<i class="rg">癒</i>' : '');
+    e.innerHTML = `<div class="bn">${esc(m.name)}${chips ? `<em class="chips">${chips}</em>` : ''}<span>Lv${m.lv}</span></div><div>HP <b>${m.hp}</b><small>/${mhp(m)}</small></div><div class="bar"><i style="width:${hp * 100}%"></i></div><div>気 <b>${m.ki}</b><small>/${mki(m)}</small></div><div class="bar ki"><i style="width:${ki * 100}%"></i></div>`;
   });
 }
 function hurtFlash(id) { const i = G.party.indexOf(id); const e = G.B && G.B.statEls[i]; if (e) { e.classList.remove('hurt'); void e.offsetWidth; e.classList.add('hurt'); } }
@@ -917,7 +922,7 @@ async function battle(group, opt = {}) {
       const d = ENEMIES[id]; let name = d.name;
       if (counts[id] > 1) { seen[id] = (seen[id] || 0) + 1; name += 'ABCD'[seen[id] - 1]; }
       return { id, d, name, hp: d.hp, atk: d.atk, def: d.def, spd: d.spd, img: enemyImg(id), flash: 0, alpha: 1, dead: false, buff: 0, rare: d.rare, shk: 0 };
-    }), turn: 1, opt, bg: opt.bg || 'field', defend: {}, sel: null, actIdx: -1, fx: [], nums: [],
+    }), turn: 1, opt, bg: opt.bg || 'field', defend: {}, pb: {}, sel: null, actIdx: -1, fx: [], nums: [],
   };
   layoutEnemies(B);
   for (const id of group) if (ENEMIES[id].dex) meet(ENEMIES[id].dex);
@@ -998,8 +1003,8 @@ async function pickEnemy(B) {
 }
 const aliveMembers = () => G.party.map(id => G.mem[id]).filter(m => m.hp > 0);
 async function execTurn(B, acts) {
-  const all = acts.map(a => ({ ...a, side: 'p', r: stat(G.mem[a.actor], 'spd') * (.7 + Math.random() * .6) }));
-  for (const e of B.es) if (!e.dead) for (let k = 0; k < (e.d.acts || 1); k++) all.push({ side: 'e', e, r: e.spd * (.7 + Math.random() * .6) });
+  const all = acts.map(a => ({ ...a, side: 'p', r: bstat(G.mem[a.actor], 'spd') * (.7 + Math.random() * .6) }));
+  for (const e of B.es) if (!e.dead) for (let k = 0; k < (e.d.acts || 1); k++) all.push({ side: 'e', e, r: eSpd(e) * (.7 + Math.random() * .6) });
   all.sort((a, b) => b.r - a.r);
   B.defend = {}; for (const a of acts) if (a.type === 'def') B.defend[a.actor] = true;
   for (const a of all) {
@@ -1008,14 +1013,55 @@ async function execTurn(B, acts) {
     if (B.es.every(e => e.dead)) return B.es.every(e => e.fled) ? 'fled' : 'win';
     if (!aliveMembers().length) return 'lose';
   }
+  await tickStatus(B);
+  if (B.es.every(e => e.dead)) return B.es.every(e => e.fled) ? 'fled' : 'win';
   B.turn++;
   return null;
 }
 function retarget(B, t) { const e = B.es[t]; if (e && !e.dead) return e; return B.es.find(x => !x.dead); }
 function weaponFx(m) { const w = m.eq.w && ITEMS[m.eq.w]; return w && (w.kind === 'gun' || w.kind === 'pistol') ? 'shot' : w && w.kind === 'fang' ? 'bite' : 'slash'; }
+// ---- 強化・弱体（戦闘中だけ。v＝割合、t＝残りターン） ----
+const ST_NAME = { atk: '攻撃力', def: '守り', spd: '素早さ' }, ST_MARK = { atk: '攻', def: '守', spd: '速' };
+function pst(id, k) { const B = G.B, s = B && B.pb[id] && B.pb[id][k]; return s && s.t > 0 ? s.v : 0; }
+function bstat(m, k) { return Math.round(stat(m, k) * (1 + pst(m.id, k))); }
+function est(e, k) { const s = e.st && e.st[k]; return s && s.t > 0 ? s.v : 0; }
+const eAtk = e => e.atk * (1 + .25 * e.buff) * (1 - est(e, 'atk')), eDef = e => e.def * (1 - est(e, 'def')), eSpd = e => e.spd * (1 - est(e, 'spd'));
+async function buffMembers(B, ms, stats, v, turns) {
+  for (const m of ms) { const pb = B.pb[m.id] = B.pb[m.id] || {}; for (const k of stats) pb[k] = { v: Math.max(v, pst(m.id, k)), t: turns + 1 }; fxMember(m.id, 'buff'); }
+  SFX.play('buff'); updateBStat();
+  await bmsg(`${ms.length > 1 ? 'みんな' : ms[0].name}の ${stats.map(k => ST_NAME[k]).join('と')}が 上がった！`, 700);
+}
+async function debuffEnemy(B, e, stats, v, turns, rate = 1) {
+  if (e.dead) return;
+  if (Math.random() > rate * (B.opt.boss ? .75 : 1)) { await bmsg(`${e.name}には 効かなかった！`, 500); return; }
+  e.st = e.st || {}; for (const k of stats) e.st[k] = { v: Math.max(v, est(e, k)), t: turns + 1 };
+  fxEnemy(e, 'hit'); SFX.play('hurt'); await bmsg(`${e.name}の ${stats.map(k => ST_NAME[k]).join('と')}が 下がった！`, 650);
+}
+async function stunEnemy(B, e, rate) {
+  if (e.dead || Math.random() > rate * (B.opt.boss ? .5 : 1)) return false;
+  e.st = e.st || {}; e.st.stun = 1; e.shk = 10; await bmsg(`${e.name}は ひるんだ！`, 550); return true;
+}
+// ターンの終わり：出血・じわじわ回復、効き目の残りターンを減らす
+async function tickStatus(B) {
+  for (const e of B.es) {
+    if (e.dead || !e.st) continue;
+    if (e.st.bleed && e.st.bleed.t > 0) {
+      const d = Math.max(1, e.st.bleed.v); e.hp -= d; e.flash = 8; num(e.x + e.w / 2, e.y + e.h / 3, d, '#ff7070');
+      await bmsg(`${e.name}は 出血で ${d} の ダメージ！`, 500);
+      if (e.hp <= 0) { e.hp = 0; e.dead = true; SFX.play('kill'); await bmsg(`${e.name}を 倒した！`); continue; }
+    }
+    for (const k of ['atk', 'def', 'spd', 'bleed']) if (e.st[k] && e.st[k].t > 0) e.st[k].t--;
+  }
+  for (const id of G.party) {
+    const m = G.mem[id], pb = B.pb[id]; if (!pb) continue;
+    if (pb.regen && pb.regen.t > 0 && m.hp > 0) { const v = Math.min(mhp(m) - m.hp, pb.regen.v); if (v > 0) { m.hp += v; fxMember(id, 'heal'); updateBStat(); await bmsg(`${m.name}の HPが ${v} 回復した。`, 450); } }
+    for (const k in pb) if (pb[k].t > 0) pb[k].t--;
+  }
+  updateBStat();
+}
 async function hitEnemy(B, e, atk, pow, sure, fxType = 'slash') {
   if (!sure && Math.random() < (e.d.evade || .05)) { SFX.play('miss'); await bmsg('しかし 攻撃は かわされた！'); return; }
-  let dmg = calcDmg(atk, e.def, pow);
+  let dmg = calcDmg(atk, eDef(e), pow);
   const crit = Math.random() < 1 / 18;
   if (crit) { dmg = Math.round(atk * pow * 1.6); }
   if (e.d.armor) dmg = Math.max(1, Math.min(dmg, e.d.armor + (Math.random() < .5 ? 1 : 0)));
@@ -1027,8 +1073,8 @@ async function hitEnemy(B, e, atk, pow, sure, fxType = 'slash') {
   if (e.hp <= 0) { e.hp = 0; e.dead = true; SFX.play('kill'); await bmsg(e.d.defeat ? e.d.defeat.replace('{n}', e.name) : `${e.name}を 倒した！`); }
 }
 async function hitMember(B, m, atk, pow, fxType = 'hit') {
-  if (Math.random() < Math.min(.25, stat(m, 'spd') / 600)) { SFX.play('miss'); await bmsg(`${m.name}は ひらりと かわした！`, 600); return; }
-  let dmg = calcDmg(atk, stat(m, 'def'), pow);
+  if (Math.random() < Math.min(.25, bstat(m, 'spd') / 600)) { SFX.play('miss'); await bmsg(`${m.name}は ひらりと かわした！`, 600); return; }
+  let dmg = calcDmg(atk, bstat(m, 'def'), pow);
   if (B.defend[m.id]) dmg = Math.max(1, Math.round(dmg / 2));
   m.hp = Math.max(0, m.hp - dmg); fxMember(m.id, fxType); SFX.play(fxType === 'shot' ? 'gun' : fxType === 'boom' ? 'boom' : 'hurt'); shake(fxType === 'boom'); hurtFlash(m.id); updateBStat();
   const p = B_POS(G.party.indexOf(m.id), G.party.length); num(p.x, p.y + 40, dmg, '#ff8a8a');
@@ -1038,7 +1084,7 @@ async function hitMember(B, m, atk, pow, fxType = 'hit') {
 async function pAct(B, a) {
   const m = G.mem[a.actor];
   if (a.type === 'def') { fxMember(a.actor, 'buff'); await bmsg(`${m.name}は 身を守っている。`, 500); return; }
-  if (a.type === 'atk') { const e = retarget(B, a.t); if (!e) return; await bmsg(`${m.name}の 攻撃！`, 350); await hitEnemy(B, e, stat(m, 'atk'), 1, false, weaponFx(m)); return; }
+  if (a.type === 'atk') { const e = retarget(B, a.t); if (!e) return; await bmsg(`${m.name}の 攻撃！`, 350); await hitEnemy(B, e, bstat(m, 'atk'), 1, false, weaponFx(m)); return; }
   if (a.type === 'item') { await useItem(a.item, a.t, true); updateBStat(); return; }
   if (a.type === 'throw') { const it = ITEMS[a.item], e = retarget(B, a.t); if (!e || !G.inv[a.item]) return; addItem(a.item, -1); await bmsg(`${m.name}は ${it.name}を 投げつけた！`, 500); await hitEnemy(B, e, it.dmg, 1, true, 'boom'); return; }
   if (a.type === 'skill') {
@@ -1050,8 +1096,14 @@ async function pAct(B, a) {
       let pow = sk.pow;
       if (sk.first && B.turn === 1) { pow *= sk.first; flashScreen('#fff'); await bmsg('初太刀！ チェストォォォッ！！', 600); }
       const ts = sk.target === 'enemies' ? B.es.filter(e => !e.dead) : [retarget(B, a.t)].filter(Boolean);
-      for (let hit = 0; hit < (sk.hits || 1); hit++) for (const e of ts) if (!e.dead) await hitEnemy(B, e, stat(m, 'atk'), pow, sk.sure, sk.fx || (sk.first ? 'chest' : 'slash'));
+      for (let hit = 0; hit < (sk.hits || 1); hit++) for (const e of ts) if (!e.dead) await hitEnemy(B, e, bstat(m, 'atk'), pow, sk.sure, sk.fx || (sk.first ? 'chest' : 'slash'));
       if (sk.drain) { const v = Math.round(stat(m, 'atk') * sk.drain); m.hp = Math.min(mhp(m), m.hp + v); updateBStat(); }
+      for (const e of ts) {
+        if (e.dead) continue;
+        if (sk.debuff) await debuffEnemy(B, e, sk.debuff.stat, sk.debuff.v, sk.debuff.turns);
+        if (sk.bleed) { e.st = e.st || {}; e.st.bleed = { v: Math.round(bstat(m, 'atk') * sk.bleed.pow), t: sk.bleed.turns }; await bmsg(`${e.name}は 傷を負った！（出血）`, 500); }
+        if (sk.stun) await stunEnemy(B, e, sk.stun);
+      }
     } else if (sk.type === 'heal') {
       const ts = sk.target === 'allies' ? G.party.map(id => G.mem[id]) : [G.mem[a.t]];
       for (const t of ts) {
@@ -1059,13 +1111,31 @@ async function pAct(B, a) {
         const v = Math.min(mhp(t) - t.hp, Math.round((sk.pow + m.lv * 3) * (.9 + Math.random() * .2)));
         t.hp += v; SFX.play('heal'); fxMember(t.id, 'heal'); updateBStat(); await bmsg(`${t.name}の HPが ${v} 回復した！`, 600);
       }
+    } else if (sk.type === 'buff') {
+      const ts = sk.target === 'allies' ? aliveMembers() : sk.target === 'ally' ? [G.mem[a.t]].filter(t => t.hp > 0) : [m];
+      if (sk.extra === 'guard') for (const id of G.party) B.defend[id] = true;
+      if (ts.length) await buffMembers(B, ts, sk.stat, sk.v, sk.turns);
+    } else if (sk.type === 'regen') {
+      const ts = sk.target === 'allies' ? aliveMembers() : sk.target === 'ally' ? [G.mem[a.t]].filter(t => t.hp > 0) : [m];
+      const v = Math.round(sk.pow + m.lv * 1.2);
+      for (const t of ts) { const pb = B.pb[t.id] = B.pb[t.id] || {}; pb.regen = { v, t: sk.turns }; fxMember(t.id, 'heal'); }
+      SFX.play('heal'); updateBStat(); await bmsg(`${ts.length > 1 ? 'みんな' : ts[0].name}の傷が 少しずつ癒えていく……`, 650);
+      if (sk.extraBuff) await buffMembers(B, ts, sk.extraBuff.stat, sk.extraBuff.v, sk.extraBuff.turns);
+    } else if (sk.type === 'debuff' || sk.type === 'stun') {
+      const ts = sk.target === 'enemies' ? B.es.filter(e => !e.dead) : [retarget(B, a.t)].filter(Boolean);
+      for (const e of ts) {
+        if (sk.type === 'debuff') await debuffEnemy(B, e, sk.stat, sk.v, sk.turns, sk.rate);
+        if (sk.debuff) await debuffEnemy(B, e, sk.debuff.stat, sk.debuff.v, sk.debuff.turns, sk.rate);
+        if (sk.type === 'stun' || sk.stunRate) { if (!(await stunEnemy(B, e, sk.type === 'stun' ? sk.rate : sk.stunRate)) && sk.type === 'stun') await bmsg(`${e.name}は ひるまなかった。`, 450); }
+      }
     } else if (sk.type === 'guard') { for (const id of G.party) B.defend[id] = true; SFX.play('buff'); G.party.forEach(id => fxMember(id, 'buff')); await bmsg('みんなの守りが 固くなった！'); }
     else if (sk.type === 'kiup') { for (const t of aliveMembers()) { t.ki = Math.min(mki(t), t.ki + sk.pow); fxMember(t.id, 'ki'); } SFX.play('buff'); updateBStat(); await bmsg('みんなの気が みなぎった！'); }
   }
 }
 async function eAct(B, e) {
+  if (e.st && e.st.stun) { e.st.stun = 0; await bmsg(`${e.name}は ひるんで 動けない！`, 550); return; }
   let sk = null; for (const s of (e.d.skills || [])) if (Math.random() < s.p) { sk = s; break; }
-  const atk = e.atk * (1 + .25 * e.buff);
+  const atk = eAtk(e);
   if (e.d.flee && Math.random() < e.d.flee) { SFX.play('run'); e.dead = true; e.fled = true; await bmsg(`${e.name}は 逃げ出した！`); return; }
   const ft = e.d.fx || 'hit';
   if (!sk) { const t = pick(aliveMembers()); await bmsg(`${e.name}の 攻撃！`, 400); await hitMember(B, t, atk, 1, ft); return; }
