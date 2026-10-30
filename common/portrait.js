@@ -12,7 +12,7 @@ function hiPortrait(id) {
   if (HI_CACHE[key]) return HI_CACHE[key];
   const c = mk(300, 360), x = c.getContext('2d');
   x.translate(150, 0); x.scale(1.2, 1.2); x.translate(-150, -6);   // 顔を大きめに（肩は下で切れる）
-  if (id === 'tsun') paintTsunHi(x); else paintHi(x, id, por);
+  if (id === 'tsun' || P0.dogHi) paintTsunHi(x, P0.dogHi); else paintHi(x, id, por);
   return (HI_CACHE[key] = c);
 }
 function paintHi(x, id, p) {
@@ -171,8 +171,9 @@ function paintHi(x, id, p) {
   if (hat === 'eboshi') { poly([[cx - 30, 92], [cx - 26, 6], [cx + 24, 0], [cx + 30, 92]], '#1a1a1a'); }
 }
 // ツン（薩摩犬）
-function paintTsunHi(x) {
-  const LINE = '#120c0a', cx = 150, f = '#2e2624', fL = '#5a4a44', m = '#6a5048';
+// 犬の顔。o で毛の色などを変えられる（宮崎編のアカなど）
+function paintTsunHi(x, o = {}) {
+  const LINE = '#120c0a', cx = 150, f = o.fur || '#2e2624', fL = o.furL || '#5a4a44', m = o.muzzle || '#6a5048';
   const path = (fn, fill, lw = 3) => { x.beginPath(); fn(); if (fill) { x.fillStyle = fill; x.fill(); } x.strokeStyle = LINE; x.lineWidth = lw; x.lineJoin = 'round'; x.stroke(); };
   path(() => { x.moveTo(cx - 110, 362); x.quadraticCurveTo(cx - 100, 250, cx - 40, 220); x.lineTo(cx + 40, 220); x.quadraticCurveTo(cx + 100, 250, cx + 110, 362); x.closePath(); }, f);
   for (const s of [-1, 1]) path(() => { x.moveTo(cx + s * 30, 110); x.lineTo(cx + s * 70, 30); x.lineTo(cx + s * 82, 120); x.closePath(); }, f);
@@ -184,6 +185,6 @@ function paintTsunHi(x) {
   path(() => { x.moveTo(cx, 186); x.lineTo(cx, 198); x.moveTo(cx - 16, 204); x.quadraticCurveTo(cx, 212, cx + 16, 204); }, null, 3);
   path(() => x.ellipse(cx + 2, 220, 10, 14, 0, 0, 7), '#e06a7a', 2);
   for (const s of [-1, 1]) { path(() => x.ellipse(cx + s * 34, 146, 11, 12, 0, 0, 7), '#1a0e08'); x.fillStyle = '#ffffff'; x.beginPath(); x.arc(cx + s * 34 - 4, 141, 4, 0, 7); x.fill(); }
-  path(() => { x.moveTo(cx - 70, 240); x.quadraticCurveTo(cx, 268, cx + 70, 240); x.lineTo(cx + 74, 256); x.quadraticCurveTo(cx, 286, cx - 74, 256); x.closePath(); }, '#c02020');
+  path(() => { x.moveTo(cx - 70, 240); x.quadraticCurveTo(cx, 268, cx + 70, 240); x.lineTo(cx + 74, 256); x.quadraticCurveTo(cx, 286, cx - 74, 256); x.closePath(); }, o.collar || '#c02020');
   path(() => x.arc(cx, 276, 9, 0, 7), '#d8b040', 2);
 }

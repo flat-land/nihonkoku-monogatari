@@ -749,6 +749,25 @@ function bgImg(type) {
     case 'tokyo': band(x, '#9ab8d8', '#e8ecf0', 0, 160); for (let i = 0; i < 512; i += 90) { P(x, i, 70, 80, 120, '#a8503a'); for (let y = 80; y < 180; y += 20) for (let k = 8; k < 76; k += 18) { P(x, i + k, y, 10, 12, '#e8e0c0'); P(x, i + k, y, 10, 2, '#5a2a1a'); } } for (let i = 30; i < 512; i += 100) { P(x, i, 120, 3, 80, '#2a2a2a'); P(x, i - 4, 114, 11, 8, '#f0e0a0'); } ground('#9a968a', 200, ['#8a867a', '#aaa69a']); break;
     case 'interior': P(x, 0, 0, 512, 200, '#e8dfc4'); for (let i = 0; i < 512; i += 64) { P(x, i, 0, 6, 200, '#5a4030'); } P(x, 0, 0, 512, 20, '#5a4030'); P(x, 0, 180, 512, 20, '#5a4030'); ground('#c8c088', 200, ['#b8b078', '#d8d098']); for (let i = 0; i < 512; i += 96) P(x, i, 200, 3, 184, '#2a4a3a'); break;
     case 'snowfield': band(x, '#a0a8b8', '#e8ecf0', 0, 170); hills(x, 150, 16, '#c8d0d8', 3); ground('#e8ecf0', 180, ['#d0d8e0', '#ffffff']); break;
+    // ---- 宮崎編（日向）の背景 ----
+    case 'hfield': band(x, '#6aa8e8', '#d8eef8', 0, 170); for (let i = 0; i < 5; i++) ell(x, 60 + i * 100, 40 + r() * 30, 30, 8, '#f4f8fc'); hills(x, 140, 22, '#7a9ab0', 3); hills(x, 158, 12, '#5f8f62', 1); treeline(x, 170, '#3e7a36', r); ground('#5b9a40', 172, ['#6dae4c', '#4c8836', '#3f7a2e']); break;
+    case 'nada': case 'hyuga': {
+      // 日向灘：水平線から日がのぼる。手前に砂浜とビロウ（ヤシの仲間）の木。hyuga はタイトル用の夜明け
+      const dawn = type === 'hyuga', hz = dawn ? 210 : 160;
+      band(x, dawn ? '#1a1838' : '#5aa0e0', dawn ? '#f0a060' : '#d8eef8', 0, hz);
+      if (dawn) { for (let i = 0; i < 60; i++) P(x, r() * 512, r() * hz * .5, 1, 1, '#c8c8f0'); disc(x, 256, hz + 4, 34, '#ffd890'); disc(x, 256, hz + 4, 26, '#fff0c0'); }
+      P(x, 0, hz, 512, 90, dawn ? '#2a3a6a' : '#2f6aa8'); for (let i = 0; i < 140; i++) P(x, r() * 512, hz + r() * 90, 4 + r() * 10, 1, dawn ? (r() < .4 ? '#ffc070' : '#4a5a8a') : '#5a9ad0');
+      if (dawn) for (let k = 0; k < 40; k++) P(x, 240 - k * .3 + r() * 30, hz + 4 + k * 2, 8 + r() * 16, 1, '#ffd890');
+      // 青島（小さな島）と鬼の洗濯板
+      ell(x, 400, hz + 4, 46, 10, dawn ? '#1a2a1a' : '#2e5a2a'); ell(x, 400, hz - 4, 30, 10, dawn ? '#142014' : '#3a7a33');
+      for (let i = 0; i < 6; i++) P(x, 340 + i * 4, hz + 14 + i * 4, 120 - i * 8, 2, dawn ? '#3a3a4a' : '#6a6458');
+      P(x, 0, hz + 90, 512, 384, dawn ? '#0a0a14' : '#e6d6a0');
+      if (!dawn) for (let i = 0; i < 400; i++) P(x, r() * 512, hz + 90 + r() * 140, 3, 1, r() < .5 ? '#d8c68c' : '#f2e6bc');
+      // ビロウの木
+      for (const [bx, s] of [[40, 1], [470, -1]]) { const col = dawn ? '#06060c' : '#5a4430'; for (let y = 120; y < 384; y++) P(x, bx + s * Math.round((384 - y) * .1), y, 7, 1, col);
+        for (let k = 0; k < 7; k++) { const a = -2.6 + k * .55; for (let t = 0; t < 46; t++) P(x, bx + 3 + s * 12 + Math.cos(a) * t, 120 + Math.sin(a) * t * .6 + t * t * .008, 4, 3, dawn ? '#06060c' : '#2e6a2a'); } }
+      break;
+    }
     default: P(x, 0, 0, 512, 384, '#111');
   }
   return (BG_CACHE[type] = dot(c));

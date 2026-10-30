@@ -19,6 +19,9 @@ const pts = k => G.flags[k] || 0;
 function addPt(k, n = 1) { G.flags[k] = pts(k) + n; }
 
 // ---------- 設定（この端末だけに保存） ----------
+// 作品ごとの設定（各作品の data.js で GAME を定める）。言い回しは GW('キー') で引く
+const GAME_W = { shopBye: ['またお越しください。'], noMoney: ['お金が 足りません。'], noSell: ['売れる物が ありません。'], jinRest: ['陣で 休んでいきますか？\n控えの人たちも ここにいますよ。', '陣で 休んでいきますか？\n控えの人たちも ここにいますよ。'], horse: ['馬に乗っていきませんか？\n{p}文で、野山ならどこへでも飛ばせますよ。', '馬に乗っていきませんか？\n{p}文で、野山ならどこへでも飛ばせますよ。'], horseNg: ['……お金が足りませんね。', '……お金が足りませんね。'] };
+const GW = (k, i = 0) => { const w = (GAME.words && GAME.words[k]) || GAME_W[k]; return w[i] ?? w[0]; };
 const OPT_KEY = 'nihonkoku-opt';
 const OPT = Object.assign({ lang: 'kago', text: 2, speed: 1, auto: false, bgm: .5, sfx: .8, mini: true, padA: true }, (() => { try { return JSON.parse(localStorage.getItem(OPT_KEY)) || {}; } catch (e) { return {}; } })());
 function saveOpt() { try { localStorage.setItem(OPT_KEY, JSON.stringify(OPT)); } catch (e) { } Audio8.vol.bgm = OPT.bgm; Audio8.vol.sfx = OPT.sfx; Audio8.setVol(); updateHud(); }
@@ -226,17 +229,17 @@ function rebuildChain() { G.chain = G.party.slice(1).map(() => ({ x: G.px, y: G.
 function partyLv() { return Math.round(G.party.reduce((s, id) => s + G.mem[id].lv, 0) / G.party.length); }
 // 連れて行けるのは4人まで。ほかの仲間は「控え」として、道場・宿・茶屋・陣で入れ替えられる
 const PARTY_MAX = 4;
-const FREE_MATES = ['oyuzu', 'gonbe', 'gensai', 'tetsu'];
+const FREE_MATES = GAME.freeMates || [];
 async function roster() {
   if (G.party.length + (G.waiting || []).length < 2) { await N('入れ替えられる仲間が まだいない。'); return; }
   let cur = 0;
   while (true) {
     const ids = [...G.party, ...G.waiting];
-    const items = ids.map(id => ({ label: (G.party.includes(id) ? '連　' : '控　') + G.mem[id].name, right: `Lv${G.mem[id].lv}`, disabled: id === 'shinpachi' })).concat([{ label: 'おわる' }]);
+    const items = ids.map(id => ({ label: (G.party.includes(id) ? '連　' : '控　') + G.mem[id].name, right: `Lv${G.mem[id].lv}`, disabled: id === GAME.leader })).concat([{ label: 'おわる' }]);
     const i = await choose(items, { x: 92, y: 20, w: 200, start: cur, title: `連れて行く仲間（${G.party.length}/${PARTY_MAX}）` });
     if (i < 0 || i === ids.length) break; cur = i;
     const id = ids[i];
-    if (id === 'shinpachi') { await N('新八は いつも一行の先頭だ。'); continue; }
+    if (id === GAME.leader) { await N(`${G.mem[id].name}は いつも一行の先頭だ。`); continue; }
     if (G.party.includes(id)) { G.party = G.party.filter(p => p !== id); G.waiting.push(id); SFX.play('cancel'); }
     else if (G.party.length >= PARTY_MAX) { await N(`連れて行けるのは ${PARTY_MAX}人までだ。\n先に だれかを控えに回そう。`); }
     else { G.waiting = G.waiting.filter(p => p !== id); G.party.push(id); SFX.play('join'); }
@@ -256,7 +259,7 @@ async function join(id, lv, quiet) {
   G.waiting = (G.waiting || []).filter(p => p !== id);
   let benched = null;
   // 4人を超えたら、物語に関わらない仲間（お柚・権兵衛・玄斎・鉄之進）から先に控えへ回す
-  if (!G.party.includes(id)) { G.party.push(id); if (G.party.length > PARTY_MAX) { const free = G.party.slice(1, -1).filter(p => FREE_MATES.includes(p)), out = free.length ? free[free.length - 1] : G.party[PARTY_MAX - 1]; G.party = G.party.filter(p => p !== out); benched = out; G.waiting.push(benched); } }
+  if (!G.party.includes(id)) { G.party.push(id); if (G.party.length > PARTY_MAX) { const free = G.party.slice(1, -1).filter(p => FREE_MATES.includes(p)), out = FREE_MATES.includes(id) ? id : free.length ? free[free.length - 1] : G.party[PARTY_MAX - 1]; G.party = G.party.filter(p => p !== out); benched = out; G.waiting.push(benched); } }
   flag('in_' + id); flag(id); rebuildChain(); meet(id);
   if (!quiet) { SFX.play('join'); await N(`${m.name}が 仲間に加わった！`); }
   if (benched) await N(`${G.mem[benched].name}は 控えに回った。\n（道場・宿・茶屋・陣で、連れて行く仲間を入れ替えられる）`);
@@ -282,7 +285,7 @@ function chron(id) { if (!G.dex.e[id]) { G.dex.e[id] = 1; const e = DEX.events.f
 function visit(id) { if (id && DEX.places[id] && !G.dex.l[id]) { G.dex.l[id] = 1; toast(`ゆかりの地：${DEX.places[id].name}`); seriesUpdate(); } }
 function linkedPrefs() {
   const out = {};
-  const add = (pref, what) => { if (!pref || pref === '鹿児島県') return; (out[pref] = out[pref] || []).push(what); };
+  const add = (pref, what) => { if (!pref || pref === GAME.pref) return; (out[pref] = out[pref] || []).push(what); };
   for (const id in G.dex.p) add(DEX.people[id].pref, DEX.people[id].name);
   for (const e of DEX.events) if (G.dex.e[e.id]) add(e.pref, e.title);
   for (const id in G.dex.l) add(DEX.places[id].pref, DEX.places[id].name);
@@ -292,7 +295,7 @@ const SERIES_KEY = 'nihonkoku-series';
 function seriesUpdate() {
   try {
     const s = JSON.parse(localStorage.getItem(SERIES_KEY) || '{}');
-    s['鹿児島県'] = { title: '薩摩の焔', chapter: G.chapter, cleared: F('cleared'), endings: Object.keys(G.dex.end), people: Object.keys(G.dex.p).map(id => DEX.people[id].name), links: linkedPrefs(), t: Date.now() };
+    s[GAME.pref] = { title: GAME.title, chapter: G.chapter, cleared: F('cleared'), endings: Object.keys(G.dex.end), people: Object.keys(G.dex.p).map(id => DEX.people[id].name), links: linkedPrefs(), t: Date.now() };
     localStorage.setItem(SERIES_KEY, JSON.stringify(s));
   } catch (e) { }
 }
@@ -447,8 +450,8 @@ function mapKey(k) {
 }
 async function openPot(n) {
   const k = 'pot_' + n.pot;
-  if (F(k)) { await N(n.spr === 'chest' ? '葛籠は 空っぽだ。' : '黒薩摩の甕は 空っぽだ。'); return; }
-  flag(k); await N(n.spr === 'chest' ? '葛籠（つづら）を開けた……' : '黒薩摩の甕を のぞきこんだ……');
+  if (F(k)) { await N(n.spr === 'chest' ? '葛籠は 空っぽだ。' : `${GAME.pot || '甕'}は 空っぽだ。`); return; }
+  flag(k); await N(n.spr === 'chest' ? '葛籠（つづら）を開けた……' : `${GAME.pot || '甕'}を のぞきこんだ……`);
   if (n.money) await getMoney(n.money); else await give(n.item, n.n || 1);
 }
 async function openLock(x, y) {
@@ -619,7 +622,7 @@ function draw() {
   if (G.scene === 'map' && G.map) drawMap();
   else if (G.scene === 'battle' && G.B) drawBattle();
   else if (G.scene === 'kassen' && G.K) drawKassen();
-  else if (G.scene === 'title') { ctx.drawImage(bgImg('title'), 0, 0); drawPlume(ctx, 'title', G.frame); drawParticles(0, 0); }
+  else if (G.scene === 'title') { ctx.drawImage(bgImg(GAME.titleBg || 'title'), 0, 0); drawPlume(ctx, GAME.titleBg || 'title', G.frame); drawParticles(0, 0); }
   tintEl.className = G.scene === 'map' ? (G.weather === 'embers' ? 'fire' : G.weather === 'rain' ? 'rain' : G.night ? 'night' : '') : '';
   drawMini();
 }
@@ -652,7 +655,7 @@ function showLog() {
 }
 async function settings() {
   G.setOpen = true;
-  const LANG = { kago: '鹿児島弁', std: '標準語', both: '鹿児島弁＋訳' }, TXT = ['ゆっくり', 'ふつう', 'はやい', '一瞬'];
+  const LANG = { kago: GAME.dialect, std: '標準語', both: GAME.dialect + '＋訳' }, TXT = ['ゆっくり', 'ふつう', 'はやい', '一瞬'];
   let i = 0;
   while (true) {
     const items = [
@@ -706,7 +709,7 @@ async function showStatus() {
   let page = 0;
   while (true) {
     const id = G.party[page], m = G.mem[id], eq = ['w', 'a', 'h', 'x'].map(s => `<div>${SLOT_NAMES[s]}：${m.eq[s] ? ITEMS[m.eq[s]].name : '―'}</div>`).join('');
-    const heart = id === 'shinpachi' ? `<div class="heart">新八の心　<span class="jo">情 ${'●'.repeat(Math.min(8, pts('jo')))}</span>　<span class="ri">理 ${'●'.repeat(Math.min(8, pts('ri')))}</span>${F('in_senkichi') || pts('bond') ? `　仙吉との絆 ${'♥'.repeat(Math.min(6, pts('bond')))}` : ''}</div>` : '';
+    const heart = GAME.heart ? GAME.heart(id) : id === 'shinpachi' ? `<div class="heart">新八の心　<span class="jo">情 ${'●'.repeat(Math.min(8, pts('jo')))}</span>　<span class="ri">理 ${'●'.repeat(Math.min(8, pts('ri')))}</span>${F('in_senkichi') || pts('bond') ? `　仙吉との絆 ${'♥'.repeat(Math.min(6, pts('bond')))}` : ''}</div>` : '';
     const p = panel(`<div class="st2"><canvas width="64" height="64"></canvas><div><b class="big">${esc(m.name)}</b>　Lv ${m.lv}　${elTag(HEROES[id].el)}<br>${memberLine(m)}<br>攻 ${stat(m, 'atk')}　守 ${stat(m, 'def')}　速 ${stat(m, 'spd')}<br><small>次のLvまで ${expAt(m.lv + 1) - m.exp}</small></div></div><div class="eqs">${eq}</div><div class="sks">わざ：${skillsOf(m).map(s => SKILLS[s].name).join('、') || 'なし'}</div>${heart}<div class="pg">◀ ${page + 1} / ${G.party.length} ▶</div>`, 8, 8, 368, 272);
     p.querySelector('canvas').getContext('2d').drawImage(faceImg(id), 0, 0);
     const k = await new Promise(res => { const h = { tap: true, onKey(k) { if (['left', 'right', 'up', 'down', 'ok', 'cancel'].includes(k)) { UI.pop(h); res(k); } } }; UI.push(h); });
@@ -840,12 +843,12 @@ async function dexMenu() {
     }
     if (tab === 3) {
       const L = linkedPrefs(), keys = Object.keys(L);
-      const p = panel(`<div class="ttl">全国のつながり</div><div class="bio">この物語で出会った、鹿児島県の外の人物・出来事・場所です。日本國物語の別の作品で、また出会うかもしれません。</div>${keys.length ? keys.map(k => `<div class="lk"><b>${esc(k)}</b>　${L[k].map(esc).join('、')}</div>`).join('') : '<div class="lk">まだ つながりはない</div>'}`, 8, 8, 368, 272, 'scrollp');
+      const p = panel(`<div class="ttl">全国のつながり</div><div class="bio">この物語で出会った、${GAME.pref}の外の人物・出来事・場所です。日本國物語の別の作品で、また出会うかもしれません。</div>${keys.length ? keys.map(k => `<div class="lk"><b>${esc(k)}</b>　${L[k].map(esc).join('、')}</div>`).join('') : '<div class="lk">まだ つながりはない</div>'}`, 8, 8, 368, 272, 'scrollp');
       await waitOk(); p.remove();
     }
     if (tab === 5) await gogyoChart();
     if (tab === 4) {
-      const p = panel(`<div class="ttl">結末</div>${DEX.endings.map(e => `<div class="lk">${G.dex.end[e.id] ? `<b>${esc(e.name)}</b>　${esc(e.desc)}` : '？？？？？'}</div>`).join('')}<div class="bio"><br>西南戦争での選択と、新八の心（情と理）、仙吉との絆で結末が変わります。</div>`, 8, 8, 368, 272, 'scrollp');
+      const p = panel(`<div class="ttl">結末</div>${DEX.endings.map(e => `<div class="lk">${G.dex.end[e.id] ? `<b>${esc(e.name)}</b>　${esc(e.desc)}` : '？？？？？'}</div>`).join('')}<div class="bio"><br>${GAME.endNote || ''}</div>`, 8, 8, 368, 272, 'scrollp');
       await waitOk(); p.remove();
     }
   }
@@ -855,7 +858,7 @@ async function shop(list) {
     const money = panel(`<div class="money">${G.money}<small>文</small></div>`, 8, 196, 96);
     const c = await choose(['買う', '売る', 'やめる'], { x: 8, y: 8, w: 96 });
     money.remove();
-    if (c < 0 || c === 2) { await N('またおじゃったもんせ。'); return; }
+    if (c < 0 || c === 2) { await N(GW('shopBye')); return; }
     if (c === 0) {
       let last = 0;
       while (true) {
@@ -869,7 +872,7 @@ async function shop(list) {
         });
         d.remove(); mb.remove(); if (i < 0) break; last = i;
         const it = ITEMS[ids[i]], can = Math.floor(G.money / it.price);
-        if (can < 1) { SFX.play('ng'); await N('お金が 足りもはん。'); continue; }
+        if (can < 1) { SFX.play('ng'); await N(GW('noMoney')); continue; }
         const n = it.type === 'use' ? await qty(Math.min(99, can), k => `${k * it.price}文`, `${it.name}を いくつ買う？`) : 1;
         if (!n) continue;
         G.money -= it.price * n; addItem(ids[i], n); SFX.play('coin');
@@ -886,7 +889,7 @@ async function shop(list) {
       let last = 0;
       while (true) {
         const ids = invList(it => it.price > 0 && it.type !== 'key');
-        if (!ids.length) { await N('売れる物が ありもはん。'); break; }
+        if (!ids.length) { await N(GW('noSell')); break; }
         const i = await choose(ids.map(id => ({ label: ITEMS[id].name + ' ×' + G.inv[id], right: Math.floor(ITEMS[id].price / 2) + '文' })), { x: 112, y: 8, w: 264, maxH: 220, start: Math.min(last, ids.length - 1) });
         if (i < 0) break; last = i;
         const id = ids[i], half = Math.floor(ITEMS[id].price / 2);
@@ -901,14 +904,14 @@ async function shopTalk(kind) {
   const s = SHOP_TALK[kind] || SHOP_TALK.dougu;
   await S(s[0], s[1], s[2]);
   // 戦場の陣では、商人のそばで休める（宿のない場所でも回復できるように）
-  if (kind === 'jinchu') { await S(s[0], '陣で 休んでいきもすか？\n控えの衆も ここに居っど。', '陣で 休んでいきますか？\n控えの人たちも ここにいますよ。'); await lodge(s[0], 0); }
+  if (kind === 'jinchu') { await S(s[0], GW('jinRest'), GW('jinRest', 1)); await lodge(s[0], 0); }
   await shop(SHOPS[kind]());
 }
 async function rest() { await fadeOut(); restAll(); bgm(null); SFX.play('bell'); await sleep(900); await fadeIn(); SFX.play('heal'); if (G.map && G.map.bgm) { Audio8.cur = null; bgm(typeof G.map.bgm === 'function' ? G.map.bgm() : G.map.bgm); } await N('ぐっすり眠って、みんな元気になった！'); }
 async function rentHorse(price = 30) {
   if (G.ride) { await N('もう 馬に乗っている。'); return; }
-  if (await ask('umakata', `馬に乗っていきもはんか？\n${price}文で、野山なら どこでん飛ばせもすど。`, `馬に乗っていきませんか？\n${price}文で、野山ならどこへでも飛ばせますよ。`)) {
-    if (G.money < price) { await S('umakata', '……銭が足りもはんな。', '……お金が足りませんね。'); return; }
+  if (await ask('umakata', GW('horse').replace('{p}', price), GW('horse', 1).replace('{p}', price))) {
+    if (G.money < price) { await S('umakata', GW('horseNg'), GW('horseNg', 1)); return; }
     G.money -= price; G.ride = true; SFX.play('horse'); await N(G.party.length > 1 ? 'みんなで 馬に乗った！ 野山を速く駆けられる。\n（町や家に入るか、メニューの「馬を降りる」で 降りる）' : '馬に乗った！ 野山を速く駆けられる。\n（町や家に入るか、メニューの「馬を降りる」で 降りる）');
   }
 }
@@ -1104,8 +1107,10 @@ function elRate(a, d) { return !a || !d ? 1 : KOKU[a] === d ? 1.5 : KOKU[d] === 
 function skillEl(sk) { return sk.el || (sk.type === 'atk' ? FX_EL[sk.fx || (sk.first ? 'chest' : 'slash')] : null); }
 function skillDesc(id) { const sk = SKILLS[id], e = skillEl(sk); return (e ? `【${e}】` : '') + sk.desc; }
 function retarget(B, t) { const e = B.es[t]; if (e && !e.dead) return e; return B.es.find(x => !x.dead); }
-function weaponEl(m) { return FX_EL[weaponFx(m)]; }
-function weaponFx(m) { const w = m.eq.w && ITEMS[m.eq.w]; return w && (w.kind === 'gun' || w.kind === 'pistol') ? 'shot' : w && w.kind === 'fang' ? 'bite' : 'slash'; }
+// 武器の属性：刀＝金、銃＝火、牙・弓・薙刀＝木、銛＝水、杖＝土、槍＝金（武器に el があればそれ）
+const KIND_EL = { sword: '金', gun: '火', pistol: '火', fang: '木', bow: '木', naginata: '木', mori: '水', cane: '土', yari: '金' };
+function weaponEl(m) { const w = m.eq.w && ITEMS[m.eq.w]; return (w && (w.el || KIND_EL[w.kind])) || FX_EL[weaponFx(m)]; }
+function weaponFx(m) { const w = m.eq.w && ITEMS[m.eq.w]; return w && (w.kind === 'gun' || w.kind === 'pistol' || w.kind === 'bow') ? 'shot' : w && w.kind === 'fang' ? 'bite' : 'slash'; }
 // ---- 強化・弱体（戦闘中だけ。v＝割合、t＝残りターン） ----
 const ST_NAME = { atk: '攻撃力', def: '守り', spd: '素早さ' }, ST_MARK = { atk: '攻', def: '守', spd: '速' };
 function pst(id, k) { const B = G.B, s = B && B.pb[id] && B.pb[id][k]; return s && s.t > 0 ? s.v : 0; }
@@ -1304,7 +1309,7 @@ async function kassen(def) {
     upd(); await km(def.intro || `${def.title}――！`, 1400);
     let result = null;
     while (!result) {
-      upd(); place(msgE, 112, 196, 264, 84); msgE.textContent = `${K.us.leader || '新八'}の 采配は？`;
+      upd(); place(msgE, 112, 196, 264, 84); msgE.textContent = `${K.us.leader || G.mem[GAME.leader].name}の 采配は？`;
       const tac = (def.tactics || []).filter(t => !K.used[t.id]);
       const c = await choose([{ label: def.attackName || '攻めかかる' }, { label: '守りを固める' }, { label: '鼓舞する' }, { label: '策を用いる', disabled: !tac.length }], { x: 8, y: 172, w: 100, cancel: false, onMove: j => msgE.textContent = ['敵の兵力と士気を削る', '受ける被害を半分にし、士気を少し回復', '味方の士気を大きく回復する', '一度だけ使える特別な策'][j] });
       place(msgE, 8, 196, 368, 84);
@@ -1405,7 +1410,7 @@ async function tachiki(rounds = 5) {
 
 // ---------- セーブ・タイトル ----------
 // 記録は3つまで。記録1は、以前の版の記録（ひとつだけの記録）を引き継ぐ
-const SAVE_KEY = 'nihonkoku-kagoshima-v2', SLOTS = 3, slotKey = i => SAVE_KEY + '-s' + i;
+const SAVE_KEY = GAME.saveKey, SLOTS = 3, slotKey = i => SAVE_KEY + '-s' + i;
 function saveData() { const inRoom = G.mapId === '_room'; return { party: G.party, waiting: G.waiting || [], mem: G.mem, inv: G.inv, money: G.money, flags: G.flags, chapter: G.chapter, mapId: inRoom ? G.ret.map : G.mapId, px: inRoom ? G.ret.x : G.px, py: inRoom ? G.ret.y : G.py, dir: G.dir, dex: G.dex, ride: false, playTime: G.playTime, place: G.map ? G.map.name : '', t: Date.now() }; }
 function save(slot = G.slot || 1) { try { G.slot = slot; localStorage.setItem(slotKey(slot), JSON.stringify(saveData())); seriesUpdate(); return true; } catch (e) { return false; } }
 function loadData(slot = G.slot || 1) {
@@ -1414,7 +1419,7 @@ function loadData(slot = G.slot || 1) {
 const fmtTime = sec => `${Math.floor(sec / 3600)}時間${String(Math.floor(sec / 60) % 60).padStart(2, '0')}分`;
 function slotLabel(i) {
   const d = loadData(i); if (!d) return { label: `記録${i}　―― 空き ――`, empty: true };
-  const lv = d.mem && d.mem.shinpachi ? d.mem.shinpachi.lv : 1;
+  const lv = d.mem && d.mem[GAME.leader] ? d.mem[GAME.leader].lv : 1;
   return { label: `記録${i}　${CH_NAME[d.chapter] || ''}　${d.place || ''}`, right: `Lv${lv}　${fmtTime(d.playTime || 0)}` };
 }
 async function pickSlot(title, forLoad) {
@@ -1428,7 +1433,7 @@ async function saveMenu() {
   await N(save(n) ? `記録${n}に 冒険を記録しました。\n（プレイ時間 ${fmtTime(G.playTime)}）` : '記録できませんでした（ブラウザの保存が無効です）。');
 }
 function applySave(d) { Object.assign(G, { party: d.party, waiting: d.waiting || [], mem: d.mem, inv: d.inv, money: d.money, flags: d.flags, chapter: d.chapter, dex: d.dex || { p: {}, e: {}, l: {}, end: {} }, ride: false, playTime: d.playTime || 0 }); fixEquips(); enterMap(d.mapId, d.px, d.py, d.dir); }
-function newGame() { G.party = ['shinpachi']; G.waiting = []; G.mem = { shinpachi: mkMember('shinpachi', 1) }; G.inv = { karaimo: 3 }; G.money = 30; G.flags = {}; G.chapter = 0; G.dex = { p: {}, e: {}, l: {}, end: {} }; G.log = []; G.playTime = 0; G.ride = false; enterMap('kajiya', 4, 11, 0); }
+function newGame() { const L = GAME.leader; G.party = [L]; G.waiting = []; G.mem = { [L]: mkMember(L, 1) }; G.inv = { ...GAME.startInv }; G.money = GAME.startMoney; G.flags = {}; G.chapter = 0; G.dex = { p: {}, e: {}, l: {}, end: {} }; G.log = []; G.playTime = 0; G.ride = false; enterMap(...GAME.start); }
 async function gameOver() {
   await fadeOut(); G.scene = 'title'; hideDlg(); bgm('sad');
   await card('力尽きた……', '最後に記録した場所から やり直します');
@@ -1437,8 +1442,8 @@ async function gameOver() {
   restAll(); await fadeIn();
 }
 async function title() {
-  G.scene = 'title'; G.map = null; G.weather = 'embers'; bgm('title');
-  const t = el('div', 'title'); t.innerHTML = '<div class="tser">日本國物語</div><div class="tt">薩摩の焔</div><div class="ts">〜二つの星を見た少年〜</div><div class="tv">鹿児島編　v1.1</div>';
+  G.scene = 'title'; G.map = null; G.weather = GAME.titleWeather || 'embers'; bgm('title');
+  const t = el('div', 'title'); t.innerHTML = `<div class="tser">日本國物語</div><div class="tt">${GAME.title}</div><div class="ts">${GAME.sub}</div><div class="tv">${GAME.ver}</div>`;
   const has = [1, 2, 3].some(i => loadData(i));
   while (true) {
     const i = await choose(['はじめから', { label: 'つづきから', disabled: !has }, '設定', '日本國物語 トップへ'], { x: 112, y: 192, w: 160, cancel: false, start: has ? 1 : 0 });
@@ -1470,7 +1475,7 @@ function fit() {
   const h = $('#holder'); h.style.width = SW * k + 'px'; h.style.height = SH * k + 'px';
   updateTopbar();
 }
-const CH_NAME = ['序章', '第一章', '第二章', '第三章', '第四章', '第五章', '第六章', '第七章', '第八章', '第九章', '第十章', '第十一章', '第十二章', '終章'];
+const CH_NAME = GAME.chapters || ['序章', '第一章', '第二章', '第三章', '第四章', '第五章', '第六章', '第七章', '第八章', '第九章', '第十章', '第十一章', '第十二章', '終章'];
 function updateTopbar() {
   const e = $('#tbInfo'); if (!e) return;
   e.textContent = G.map && G.scene !== 'title' ? `${CH_NAME[G.chapter] || ''}　${G.mapId === '_room' ? G.map.name : (G.map.name || '')}\n${G.money ?? 0} 文　⏱${fmtTime(G.playTime)}` : '';

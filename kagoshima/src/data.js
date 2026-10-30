@@ -1,5 +1,12 @@
 'use strict';
 // ===== 登場人物（マップ上の姿 spr ／ 会話の顔 por） =====
+// この作品の設定（共通のエンジン common/engine.js が読む）
+const GAME = {
+  pref: '鹿児島県', title: '薩摩の焔', sub: '〜二つの星を見た少年〜', ver: '鹿児島編　v1.2', saveKey: 'nihonkoku-kagoshima-v2', leader: 'shinpachi',
+  start: ['kajiya', 4, 11, 0], dialect: '鹿児島弁', pot: '黒薩摩の甕', startInv: { karaimo: 3 }, startMoney: 30, freeMates: ['oyuzu', 'gonbe', 'gensai', 'tetsu'],
+  endNote: '西南戦争での選択と、新八の心（情と理）、仙吉との絆で結末が変わります。',
+  words: { shopBye: ['またおじゃったもんせ。'], noMoney: ['お金が 足りもはん。'], noSell: ['売れる物が ありもはん。'], jinRest: ['陣で 休んでいきもすか？\n控えの衆も ここに居っど。', '陣で 休んでいきますか？\n控えの人たちも ここにいますよ。'], horse: ['馬に乗っていきもはんか？\n{p}文で、野山なら どこでん飛ばせもすど。', '馬に乗っていきませんか？\n{p}文で、野山ならどこへでも飛ばせますよ。'], horseNg: ['……銭が足りもはんな。', '……お金が足りませんね。'] },
+};
 const MEIJI = () => G.chapter >= 7;
 const SKIN = '#f2c49c', SKIN2 = '#dca77a', SKINW = '#f6d6c0';
 const PEOPLE = {

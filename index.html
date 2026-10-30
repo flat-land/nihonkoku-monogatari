@@ -45,6 +45,13 @@
     <div class="prog" id="prog"></div>
     <span class="play">遊ぶ</span>
   </a>
+  <a class="feature" href="miyazaki/">
+    <div class="no">第二弾　宮崎県（鹿児島編の続き）</div>
+    <div class="t">日向の灯 〜残り火を継ぐ少年〜</div>
+    <div class="s">明治十年、可愛岳の夜から、宮崎県がふたたび置かれる明治十六年まで。<br>序章＋四章＋終章、三つの結末。</div>
+    <div class="prog" id="progM"></div>
+    <span class="play">遊ぶ</span>
+  </a>
   <div class="links" id="links"></div>
 
   <div id="regions"></div>
@@ -61,7 +68,7 @@
     ['四国', ['徳島県', '香川県', '愛媛県', '高知県']],
     ['九州・沖縄', ['福岡県', '佐賀県', '長崎県', '熊本県', '大分県', '宮崎県', '鹿児島県', '沖縄県']],
   ];
-  const OPEN = ['鹿児島県'];
+  const OPEN = ['鹿児島県', '宮崎県'];
   let S = {};
   try { S = JSON.parse(localStorage.getItem('nihonkoku-series') || '{}'); } catch (e) { }
   const links = {};
@@ -69,6 +76,8 @@
   const k = S['鹿児島県'];
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   if (k) document.getElementById('prog').textContent = (k.cleared ? `クリア済み　結末 ${k.endings.length} / 4` : `進行中：${['序章', '第一章', '第二章', '第三章', '第四章', '第五章', '第六章', '第七章', '第八章', '第九章', '第十章', '第十一章', '第十二章', '終章'][k.chapter] || ''}`) + `　出会った人物 ${k.people.length}人`;
+  const m = S['宮崎県'];
+  if (m) document.getElementById('progM').textContent = (m.cleared ? `クリア済み　結末 ${m.endings.length} / 3` : `進行中：${['序章', '第一章', '第二章', '第三章', '第四章', '終章'][m.chapter] || ''}`) + `　出会った人物 ${m.people.length}人`;
   const lk = Object.keys(links).filter(p => p.endsWith('都') || p.endsWith('道') || p.endsWith('府') || p.endsWith('県'));
   if (lk.length) document.getElementById('links').innerHTML = '物語の中のつながり：<br>' + lk.map(p => `<b>${esc(p)}</b> ${links[p].slice(0, 4).map(esc).join('・')}${links[p].length > 4 ? ' ほか' : ''}`).join('<br>');
   document.getElementById('regions').innerHTML = REGIONS.map(([r, ps]) =>

@@ -52,6 +52,22 @@
 - **脚色**：西郷の犬ツンの登場時期（上野の西郷像の犬のモデルとされる）、新八が歴史の場面に立ち会うこと
 - 図鑑の「ゆかりの地」は実在の場所です。訪れるときは最新の公開情報を確かめてください
 
+## 第二弾　宮崎県「日向の灯 〜残り火を継ぐ少年〜」
+
+鹿児島編の続きです。延岡・長井村の猟師の子・甲斐源太（架空の人物）が、明治十年の可愛岳の夜に西郷たちを山道へ導くところから、日向の人々の「分県運動」をへて、明治十六年に宮崎県がふたたび置かれるまでを描きます。
+
+- 序章＋四章＋終章、結末は3つ（源太の心「海と山」と、お菊との絆で変わる）
+- 日向の国の野山を歩いて、延岡・高千穂・美々津・椎葉・宮崎・都城・飫肥・鵜戸神宮・鹿児島へ
+- 実在の人物：西郷隆盛、小倉処平、山県有朋、内藤政挙、川越進、山田顕義、小村寿太郎 など。鹿児島編の主人公・新八も登場します
+- 寄り道の仲間：お鈴（高千穂）・辰五郎（美々津）・平蔵（都城）・弥七（椎葉）（架空の人物）
+
+```
+common/                   両作品で共有する仕組み（音・絵・エンジン・顔絵・見た目）
+miyazaki/src/data.js      人物・能力・わざ・道具・敵・図鑑
+miyazaki/src/story.js     物語
+miyazaki/src/maps.js      マップ
+```
+
 ## シリーズのつながり
 
 すべての作品を同じサイト（`flat-land.github.io/nihonkoku-monogatari/`）に置くので、ブラウザの保存領域 `nihonkoku-series` を作品どうしで共有できます。
@@ -63,12 +79,12 @@
 ```
 index.html                シリーズの入口（47都道府県）
 kagoshima/index.html      薩摩の焔
-kagoshima/src/audio.js    効果音とBGM（その場で合成）
-kagoshima/src/gfx.js      ドット絵（地形・人物・顔・敵・背景）
+common/audio.js           効果音とBGM（その場で合成）
+common/gfx.js             ドット絵（地形・人物・顔・敵・背景）
 kagoshima/src/data.js     人物・能力・わざ・道具・敵・図鑑
 kagoshima/src/data2.js    各地の仲間・武器・野山の敵
-kagoshima/src/portrait.js 主要人物の顔絵
-kagoshima/src/engine.js   移動・会話・メニュー・戦闘・合戦・セーブ
+common/portrait.js        主要人物の顔絵
+common/engine.js          移動・会話・メニュー・戦闘・合戦・セーブ
 kagoshima/src/story.js    序章〜第六章
 kagoshima/src/story2.js   第七章〜終章・結末
 kagoshima/src/story3.js   各地の寄り道
