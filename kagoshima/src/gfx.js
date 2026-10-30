@@ -78,6 +78,7 @@ const TP = {
   'r': (x, r) => { P(x, 0, 0, 32, 32, '#3a3430'); for (let i = 0; i < 12; i++) { const px = r() * 26, py = r() * 26; P(x, px, py, 6, 2, '#1e1a18'); P(x, px, py, 6, 1, '#5a504a'); } speck(x, r, 20, ['#4a403a', '#6a5a50', '#a8401a']); },
   'R': (x, r) => { TP.s(x, r); ell(x, 16, 24, 11, 4, 'rgba(0,0,0,.25)'); disc(x, 16, 17, 9, '#6a645c'); disc(x, 13, 14, 5, '#8a847a'); P(x, 10, 11, 3, 2, '#a8a296'); outline(x.canvas, '#2a2622'); },
   'x': (x) => P(x, 0, 0, 32, 32, '#000'),
+  'q': (x, r) => { TP['.'](x, r, 0, 0); for (let i = 0; i < 10; i++) P(x, r() * 30, r() * 30, 3, 2, '#3f7a2e'); },
   'w': (x, r) => { P(x, 0, 0, 32, 32, '#a8784a'); for (let y = 0; y < 32; y += 8) { P(x, 0, y, 32, 1, '#7a5230'); P(x, 0, y + 1, 32, 1, '#c09060'); P(x, ((y * 7) % 24) + 4, y, 1, 8, '#7a5230'); } },
   't': (x, r) => { P(x, 0, 0, 32, 32, '#c8c088'); for (let y = 1; y < 32; y += 2) P(x, 1, y, 30, 1, '#b8b078'); P(x, 0, 0, 32, 2, '#2a4a3a'); P(x, 0, 30, 32, 2, '#2a4a3a'); P(x, 0, 0, 1, 32, '#9a9260'); },
   'V': (x) => { P(x, 0, 0, 32, 32, '#3a2a1e'); P(x, 0, 26, 32, 6, '#5a4030'); P(x, 0, 26, 32, 1, '#7a5a40'); },
@@ -91,12 +92,13 @@ const TP = {
   'G': (x) => { P(x, 0, 0, 32, 32, '#3a2a1a'); P(x, 0, 0, 32, 6, '#2a2e3a'); P(x, 2, 6, 28, 26, '#5a3a20'); P(x, 4, 8, 11, 24, '#7a5230'); P(x, 17, 8, 11, 24, '#7a5230'); for (let y = 12; y < 32; y += 6) { P(x, 6, y, 2, 2, '#c8a040'); P(x, 24, y, 2, 2, '#c8a040'); } },
   'J': (x, r) => { TP[','](x, r); P(x, 2, 4, 28, 3, '#c83020'); P(x, 0, 3, 32, 2, '#2a1a1a'); P(x, 4, 10, 24, 2, '#c83020'); P(x, 7, 4, 4, 28, '#c83020'); P(x, 21, 4, 4, 28, '#c83020'); P(x, 7, 4, 1, 28, '#e85a40'); P(x, 21, 4, 1, 28, '#e85a40'); P(x, 14, 7, 4, 4, '#2a1a1a'); },
   'l': (x, r) => { TP[','](x, r); ell(x, 16, 28, 8, 2, 'rgba(0,0,0,.3)'); P(x, 13, 18, 6, 10, '#8a8678'); P(x, 9, 15, 14, 3, '#9a968a'); P(x, 11, 8, 10, 7, '#a8a498'); P(x, 13, 10, 6, 3, '#f0d070'); P(x, 8, 5, 16, 3, '#8a8678'); P(x, 14, 2, 4, 3, '#8a8678'); outline(x.canvas, '#2a2824'); },
-  'O': (x, r, f) => { P(x, 0, 0, 32, 32, '#8a8678'); P(x, 3, 3, 26, 26, '#6ab8c8'); P(x, 3, 3, 26, 3, '#9ad8e0'); for (let i = 0; i < 3; i++) disc(x, 8 + i * 8 + f, 10 + ((i + f) % 2) * 6, 3, 'rgba(255,255,255,.55)'); },
+  'O': (x, r, f) => { P(x, 0, 0, 32, 32, '#5aa8b8'); for (let y = 0; y < 32; y += 2) P(x, 0, y, 32, 1, mix('#4a98aa', '#7ac8d4', (Math.sin((y + f * 3) / 5) + 1) / 2)); for (let i = 0; i < 4; i++) { const px = (i * 9 + f * 2) % 28, py = 6 + ((i * 7 + f) % 4) * 6; P(x, px, py, 5, 1, '#c8f0f4'); } disc(x, 10 + f, 18, 2, 'rgba(255,255,255,.45)'); disc(x, 22 - f, 12, 1, 'rgba(255,255,255,.45)'); },
   'c': (x, r) => { P(x, 0, 0, 32, 32, '#5a4a3a'); speck(x, r, 30, ['#4a3a2e', '#6a5a48']); ell(x, 16, 20, 12, 12, '#120c0a'); ell(x, 16, 22, 9, 10, '#000'); },
   'X': (x, r) => { TP.u(x, r); for (let i = 0; i < 4; i++) { P(x, 1 + i * 8, 10, 7, 18, '#8a7a50'); P(x, 1 + i * 8, 10, 7, 2, '#b8a870'); for (let y = 13; y < 28; y += 4) P(x, 1 + i * 8, y, 7, 1, '#6a5a38'); } },
   'Y': (x, r, f) => { TP['.'](x, r, 0, 0); P(x, 6, 2, 2, 28, '#4a3220'); P(x, 8, 3 + f, 18, 20, '#f0ece0'); P(x, 8, 3 + f, 18, 2, '#c8c0a8'); disc(x, 17, 13 + f, 6, '#1a1a1a'); disc(x, 17, 13 + f, 4, '#f0ece0'); P(x, 16, 8 + f, 2, 11, '#1a1a1a'); P(x, 12, 12 + f, 11, 2, '#1a1a1a'); },
 };
 // 'D'（戸）は通れる（engine の passable で家のある戸だけ通す）。'~'（海・川）は通れない
+// 'q' は野山の森（木の陰を通り抜けられる）
 const SOLID = new Set('T#HQhLgKFMmCSPxRrfbVvIkzAUGJlOcXYo~'.split(''));
 const ANIM = new Set(['~', 'S', 'f', 'n', 'm', 'I', 'O', 'Y', 'o']);
 const TILE_CACHE = {};
@@ -118,6 +120,7 @@ function edgeBits(m, x, y, ch) {
   const at = (i, j) => (i < 0 || j < 0 || i >= m.w || j >= m.h) ? ch : ((m.bmask && m.bmask[j * m.w + i]) || m.g[j][i]);
   const n = at(x, y - 1), s = at(x, y + 1), w = at(x - 1, y), e = at(x + 1, y);
   if (ch === '~' || ch === 'o') { const L = c => !WATER.has(c); return (L(n) ? 1 : 0) | (L(s) ? 2 : 0) | (L(w) ? 4 : 0) | (L(e) ? 8 : 0); }
+  if (ch === 'O') { const R = c => c !== 'O'; return (R(n) ? 1 : 0) | (R(s) ? 2 : 0) | (R(w) ? 4 : 0) | (R(e) ? 8 : 0); }
   if (ch === 'M' || ch === '#' || ch === 'A') { const O = c => c !== ch && !(ch === 'M' && (c === 'm' || c === 'c')); return (O(n) ? 1 : 0) | (O(s) ? 2 : 0) | (O(w) ? 4 : 0) | (O(e) ? 8 : 0); }
   if ('.,;su'.includes(ch)) return (TALL.has(n) ? 1 : 0) | (TALL.has(w) ? 2 : 0);
   return 0;
@@ -129,6 +132,13 @@ function paintEdge(x, ch, b, f) {
     if (b & 2) { P(x, 0, 29, 32, 3, lip); for (let i = (f * 2) % 6; i < 32; i += 6) P(x, i, 28, 3, 1, foam); }
     if (b & 4) { P(x, 0, 0, 3, 32, wet); P(x, 3, 0, 1, 32, lip); for (let j = (f * 3) % 7; j < 32; j += 7) P(x, 4, j, 1, 3, foam); }
     if (b & 8) { P(x, 29, 0, 3, 32, wet); P(x, 28, 0, 1, 32, lip); }
+  } else if (ch === 'O') {
+    // 温泉の縁：ごつごつした岩を積む。奥（上）の岩は湯面より高く、手前の岩は湯にせり出す
+    const r = rnd(b * 31 + 7), rock = (cx, cy, rw, rh) => { ell(x, cx + 1, cy + 2, rw, rh, '#2a2420'); ell(x, cx, cy, rw, rh, '#6a645a'); ell(x, cx - rw * .25, cy - rh * .3, rw * .6, rh * .5, '#8e877a'); P(x, cx - rw * .5, cy - rh * .7, rw * .5, 1, '#b0a898'); };
+    if (b & 1) { P(x, 0, 0, 32, 9, '#4e4a42'); P(x, 0, 9, 32, 3, '#3a6a7a'); for (let i = -2; i < 34; i += 8 + (r() * 3 | 0)) rock(i + 3, 4 + r() * 2, 5 + r() * 2, 4 + r() * 1.5); }
+    if (b & 2) { for (let i = -2; i < 34; i += 8 + (r() * 3 | 0)) rock(i + 3, 28 - r() * 2, 5 + r() * 2, 4); }
+    if (b & 4) { P(x, 0, 0, 5, 32, '#3a6a7a'); for (let j = 0; j < 34; j += 8 + (r() * 3 | 0)) rock(3, j + 3, 4, 5 + r() * 1.5); }
+    if (b & 8) { for (let j = 0; j < 34; j += 8 + (r() * 3 | 0)) rock(29, j + 3, 4, 5 + r() * 1.5); }
   } else if (ch === 'M' || ch === '#' || ch === 'A') {
     const M = ch === 'M', face = M ? ['#4e4038', '#3a2e28', '#6a5a4e'] : ['#5e5b53', '#46443e', '#8a867c'];
     if (b & 2) { const h = M ? 13 : 9; P(x, 0, 32 - h, 32, h, face[0]); for (let i = 1; i < 32; i += M ? 5 : 8) { P(x, i, 32 - h + 1, 1, h - 1, face[1]); if (M) P(x, i + 1, 32 - h + 1, 1, h - 4, face[2]); } P(x, 0, 32 - h, 32, 1, M ? '#9a8a7a' : '#c8c3b5'); P(x, 0, 31, 32, 1, '#221a16'); }
@@ -142,11 +152,11 @@ function paintEdge(x, ch, b, f) {
   }
 }
 // ミニマップ用の代表色
-const TILE_COLOR = { '.': '#5b9a40', 'u': '#8a8a52', ',': '#c4a66e', ';': '#9a968a', 's': '#e6d6a0', '~': '#2f66a8', 'o': '#21508c', 'T': '#2b5f28', 'P': '#2d6233', 'b': '#5f9a3a', '#': '#8a867c', 'H': '#4d5468', 'Q': '#3c4252', 'h': '#ece6d4', 'D': '#28407a', 'L': '#c8a040', 'g': '#2a5e2e', 'K': '#8a6a40', 'W': '#ad9268', 'F': '#7a5634', 'n': '#5a7a8a', 'M': '#6c5c50', 'm': '#c84a1a', 'C': '#26262a', 'S': '#1b1b1b', '=': '#9b968a', 'p': '#8a6a42', 'f': '#e05a1a', 'r': '#3a3430', 'R': '#6a645c', 'w': '#a8784a', 't': '#c8c088', 'V': '#3a2a1e', 'v': '#ece4cc', 'e': '#9a4a32', 'A': '#9a958a', 'U': '#f0ece0', 'G': '#5a3a20', 'J': '#c83020', 'O': '#6ab8c8', 'c': '#120c0a', 'X': '#8a7a50' };
+const TILE_COLOR = { 'q': '#2f6a2c', '.': '#5b9a40', 'u': '#8a8a52', ',': '#c4a66e', ';': '#9a968a', 's': '#e6d6a0', '~': '#2f66a8', 'o': '#21508c', 'T': '#2b5f28', 'P': '#2d6233', 'b': '#5f9a3a', '#': '#8a867c', 'H': '#4d5468', 'Q': '#3c4252', 'h': '#ece6d4', 'D': '#28407a', 'L': '#c8a040', 'g': '#2a5e2e', 'K': '#8a6a40', 'W': '#ad9268', 'F': '#7a5634', 'n': '#5a7a8a', 'M': '#6c5c50', 'm': '#c84a1a', 'C': '#26262a', 'S': '#1b1b1b', '=': '#9b968a', 'p': '#8a6a42', 'f': '#e05a1a', 'r': '#3a3430', 'R': '#6a645c', 'w': '#a8784a', 't': '#c8c088', 'V': '#3a2a1e', 'v': '#ece4cc', 'e': '#9a4a32', 'A': '#9a958a', 'U': '#f0ece0', 'G': '#5a3a20', 'J': '#c83020', 'O': '#6ab8c8', 'c': '#120c0a', 'X': '#8a7a50' };
 
 // ---------- 建物（家ごとに形を変えて、一枚絵で描く。足元のタイルは当たり判定とミニマップ用） ----------
 // b: { x, y, w, h, door, style(buke/machiya/kaya/kura/tera/yoko/jin), roof(hip/gable/irimoya), wing(L/R), sign, noren, locked }
-const BLD_UP = { buke: 12, machiya: 16, kaya: 22, kura: 18, tera: 30, yoko: 18, jin: 4 };
+const BLD_UP = { buke: 12, machiya: 16, kaya: 22, kura: 18, tera: 30, yoko: 18, jin: 4, jinja: 34 };
 const BLD_CACHE = {};
 function lerp(a, b, t) { return a + (b - a) * t; }
 // 屋根：上辺 top〜軒先 bot。inset は棟の縮み（寄棟）
@@ -258,6 +268,27 @@ function bldImg(b) {
     paintRoof(x, -2, W + 2, -up + 6, wt + 3, { mat: 'slate', inset: W * .18 });
     x.fillStyle = 'rgba(0,0,0,.3)'; x.fillRect(0, wt + 3, W, 3);
     sign(H - 34);
+  } else if (st === 'jinja') {
+    // 神社の本殿：石の基壇、朱の柱、高床、檜皮葺きの切妻屋根に千木と鰹木
+    const fl = H - 22, wt = fl - 34, cxm = W / 2;
+    P(x, -4, H - 10, W + 8, 10, '#9a968a'); P(x, -4, H - 10, W + 8, 2, '#c8c3b5'); for (let i = -4; i < W + 4; i += 12) P(x, i, H - 8, 1, 8, '#7a766c');
+    P(x, cxm - 18, H - 12, 36, 12, '#8a867c'); for (let k = 0; k < 4; k++) P(x, cxm - 16 + k * 2, H - 12 + k * 3, 32 - k * 4, 1, '#c0bbae');
+    P(x, 0, fl, W, 4, '#6a4a2a'); P(x, 0, fl, W, 1, '#9a7448');
+    for (let i = 4; i < W; i += 16) { P(x, i, fl + 4, 3, H - 12 - fl - 4, '#3a2a1a'); }
+    P(x, 0, wt, W, 34, '#f4efe2'); for (let i = 0; i <= W; i += 24) { P(x, Math.min(W - 4, i), wt, 4, 34, '#c8402a'); P(x, Math.min(W - 4, i), wt, 1, 34, '#e86a4a'); }
+    P(x, 0, wt + 2, W, 3, '#c8402a'); P(x, 0, fl - 3, W, 3, '#a8301e');
+    P(x, cxm - 14, wt + 8, 28, 22, '#3a2a1a'); for (let k = cxm - 13; k < cxm + 14; k += 3) P(x, k, wt + 8, 1, 22, '#c8a060'); P(x, cxm - 14, wt + 18, 28, 1, '#c8a060');
+    // しめ縄と紙垂
+    for (let k = 0; k < 30; k++) P(x, cxm - 22 + k * 1.5, wt + 4 + Math.sin(k / 30 * Math.PI) * 4, 2, 3, k % 3 ? '#d8c890' : '#b8a060');
+    for (const sx of [cxm - 12, cxm, cxm + 12]) { P(x, sx, wt + 9, 3, 4, '#ffffff'); P(x, sx + 1, wt + 13, 3, 4, '#ffffff'); }
+    // 賽銭箱と鈴
+    P(x, cxm - 9, fl - 12, 18, 10, '#5a3a20'); for (let k = cxm - 8; k < cxm + 9; k += 3) P(x, k, fl - 12, 1, 3, '#2a1a10'); disc(x, cxm, wt + 1, 3, '#e8c040');
+    paintRoof(x, -8, W + 8, -up + 14, wt + 4, { inset: 0, col: '#7a4a2e', barge: '#4a2a18' });
+    // 千木（屋根の両端で交差する木）と鰹木
+    const top = -up + 14;
+    for (const [ex, dir] of [[-6, -1], [W + 4, 1]]) for (let k = 0; k < 14; k++) { P(x, ex + dir * k * .6 - 1, top - k, 3, 1, '#5a3418'); P(x, ex - dir * k * .6 - 1, top - k, 3, 1, '#5a3418'); }
+    for (let i = 10; i < W - 8; i += 14) { P(x, i, top - 6, 8, 5, '#6a4022'); P(x, i, top - 6, 8, 1, '#9a6a3a'); P(x, i + 6, top - 5, 2, 4, '#e8c040'); }
+    x.fillStyle = 'rgba(0,0,0,.3)'; x.fillRect(0, wt + 4, W, 3);
   }
   return (BLD_CACHE[key] = { c: dot(c), ox: -M, oy: -up });
 }
@@ -442,9 +473,9 @@ function paintHorse(x, d, f) {
     P(x, 10, 36, 30, 13, c); P(x, 10, 36, 30, 3, shade(c, .2)); P(x, 12 + f * 2, 48, 4, 13, cD); P(x, 35 - f * 2, 48, 4, 13, cD); P(x, 17 - f * 2, 48, 4, 13, c); P(x, 30 + f * 2, 48, 4, 13, c);
     P(x, 2, 24, 10, 16, c); P(x, 0, 22, 8, 8, c); P(x, 0, 27, 3, 2, '#111'); P(x, 3, 24, 2, 2, '#111'); P(x, 8, 22, 5, 14, m); P(x, 39, 38, 5, 14, m); P(x, 14, 34, 16, 4, '#8a2a1a');
   } else {
-    P(x, 14, 34, 20, 16, c); P(x, 15, 49, 5, 12, cD); P(x, 28, 49, 5, 12, cD);
-    if (d === 0) { P(x, 18, 28, 12, 20, c); P(x, 19, 44, 10, 6, shade(c, .15)); P(x, 19, 33, 2, 2, '#111'); P(x, 27, 33, 2, 2, '#111'); P(x, 22, 28, 4, 20, '#e8e0d0'); }
-    else { P(x, 21, 24, 6, 12, m); P(x, 22, 48, 4, 10, m); }
+    ell(x, 24, 42, 14, 9, c); P(x, 11, 36, 26, 3, shade(c, .2)); P(x, 13, 48, 5, 13, cD); P(x, 30, 48, 5, 13, cD); P(x, 18, 49, 4, 11, c); P(x, 26, 49, 4, 11, c);
+    if (d === 0) { P(x, 18, 24, 12, 26, c); P(x, 18, 24, 3, 26, shade(c, .2)); P(x, 19, 44, 10, 7, shade(c, .15)); P(x, 19, 31, 2, 2, '#111'); P(x, 27, 31, 2, 2, '#111'); P(x, 22, 26, 4, 22, '#e8e0d0'); P(x, 19, 22, 10, 4, m); P(x, 21, 47, 2, 2, '#2a1a10'); P(x, 25, 47, 2, 2, '#2a1a10'); }
+    else { P(x, 20, 22, 8, 12, m); ell(x, 24, 40, 9, 6, shade(c, .12)); P(x, 22, 44, 4, 16, m); P(x, 21, 52, 6, 6, m); }
     P(x, 12, 36, 24, 4, '#8a2a1a');
   }
 }
@@ -462,6 +493,14 @@ function charImg(key, d, f) {
       else if (p.kind === 'chest') { ell(x, 16, 45, 12, 2.5, 'rgba(0,0,0,.3)'); P(x, 4, 30, 24, 15, p.open ? '#6a4a2a' : '#9a7a4a'); for (let i = 5; i < 28; i += 3) P(x, i, 30, 1, 15, '#7a5a32'); P(x, 3, 27, 26, 5, p.open ? '#4a3420' : '#b89a5a'); P(x, 3, 27, 26, 1, '#d8ba7a'); P(x, 14, 32, 4, 4, '#c8a040'); }
       else if (p.kind === 'boat') { P(x, 2, 36, 28, 6, '#5a3a20'); P(x, 4, 42, 24, 2, '#3a2410'); P(x, 8, 26, 5, 10, '#333'); disc(x, 10, 23, 3, '#e0b890'); P(x, 7, 20, 6, 2, '#111'); P(x, 18, 26, 5, 10, '#6a6a70'); disc(x, 20, 23, 3, '#e0b890'); }
       else if (p.kind === 'horse') { const h = mk(48, 64); paintHorse(h.getContext('2d'), dd, ff === 1 ? 1 : 0); x.drawImage(h, -8, -16); }
+      else if (p.kind === 'crane') {
+        // 出水の鶴（ナベヅル）：灰色の体、白い首、頭に赤い印。f=1 で首を下げて餌をついばむ
+        ell(x, 16, 45, 8, 2, 'rgba(0,0,0,.25)'); P(x, 14, 38, 1, 7, '#2a2a2a'); P(x, 18, 38, 1, 7, '#2a2a2a');
+        ell(x, 16, 33, 8, 6, '#5a5a62'); ell(x, 15, 31, 6, 3, '#7a7a84'); P(x, 21, 31, 4, 5, '#1a1a1e');
+        const fl = dd === 1 ? -1 : 1, hx = 16 - fl * 6, down = ff === 1;
+        if (down) { P(x, hx - 1, 30, 3, 9, '#f4f4f0'); P(x, hx - 2, 38, 4, 3, '#f4f4f0'); P(x, hx - 2 - fl * 2, 40, 3, 1, '#c8a040'); }
+        else { P(x, hx - 1, 18, 3, 14, '#f4f4f0'); P(x, hx - 2, 16, 5, 4, '#f4f4f0'); P(x, hx - 1, 15, 3, 2, '#d02020'); P(x, hx - 1 - fl * 4, 17, 3, 1, '#c8a040'); P(x, hx - (fl > 0 ? 1 : -1), 17, 1, 1, '#111'); }
+      }
       else if (p.kind === 'sign') { P(x, 14, 26, 4, 20, '#6a4a2a'); P(x, 4, 18, 24, 12, '#c8a46a'); P(x, 4, 18, 24, 2, '#e0c08a'); for (let i = 7; i < 26; i += 4) P(x, i, 22, 2, 5, '#3a2a1a'); }
       else paintFig(x, p, dd, ff);
       out[dd + '_' + ff] = dot(c, ['boat', 'sign'].includes(p.kind) ? null : '#1c1219');
@@ -684,7 +723,7 @@ function bgImg(type) {
   const c = mk(512, 384), x = c.getContext('2d'), r = rnd(type.length * 17 + 3);
   const ground = (col, y0, cols) => { P(x, 0, y0, 512, 384 - y0, col); for (let i = 0; i < 700; i++) { const yy = y0 + r() * (384 - y0); P(x, r() * 512, yy, 2 + (yy - y0) / 40, 1, cols[(r() * cols.length) | 0]); } };
   switch (type) {
-    case 'field': band(x, '#6ea8e6', '#d2eaf6', 0, 170); for (let i = 0; i < 5; i++) ell(x, 60 + i * 100, 40 + r() * 30, 30, 8, '#f4f8fc'); volcano(x, 400, 150, 220, 60, '#7a8aa0', '#e8ecf0'); hills(x, 150, 10, '#6f9a6a', 1); treeline(x, 168, '#3e7a36', r); ground('#5b9a40', 170, ['#6dae4c', '#4c8836', '#3f7a2e']); break;
+    case 'field': band(x, '#6ea8e6', '#d2eaf6', 0, 170); for (let i = 0; i < 5; i++) ell(x, 60 + i * 100, 40 + r() * 30, 30, 8, '#f4f8fc'); volcano(x, 400, 150, 220, 60, '#7a8aa0', null); hills(x, 150, 10, '#6f9a6a', 1); treeline(x, 168, '#3e7a36', r); ground('#5b9a40', 170, ['#6dae4c', '#4c8836', '#3f7a2e']); break;
     case 'dojo': P(x, 0, 0, 512, 190, '#6e4f33'); for (let i = 0; i < 512; i += 32) { P(x, i, 0, 3, 190, '#5a3f26'); P(x, i + 3, 0, 1, 190, '#86623e'); } P(x, 0, 24, 512, 10, '#4a3220'); P(x, 180, 50, 150, 90, '#f2ead6'); x.fillStyle = '#1a1a1a'; x.font = 'bold 40px serif'; x.textAlign = 'center'; x.fillText('示現流', 255, 112); ground('#ad9268', 190, ['#a08560', '#bba078']); break;
     case 'beach': case 'storm': case 'night': case 'title': case 'fire': {
       const pal = { beach: ['#6ea8e6', '#dceef8', '#2f66a8', '#5d5468', '#d8d8d0', '#e6d6a0'], storm: ['#1a1e2a', '#3a4256', '#1d3550', '#2a2a36', '#555a66', '#8a7c5c'], night: ['#060a24', '#1c2a58', '#13244a', '#141a30', '#3a4060', '#4a4636'], title: ['#0e1434', '#d86a3a', '#1a2a4a', '#2a1e2e', '#6a5a6a', '#0a0a12'], fire: ['#2a0a0a', '#c8401a', '#3a1a1a', '#2a1010', '#6a3a2a', '#3a2418'] }[type];
@@ -692,7 +731,7 @@ function bgImg(type) {
       band(x, pal[0], pal[1], 0, hz);
       if (type === 'night' || type === 'title') for (let i = 0; i < 90; i++) P(x, r() * 512, r() * hz * .6, 1, 1, r() < .2 ? '#ffffff' : '#a8b0e0');
       if (type === 'night') { disc(x, 420, 48, 18, '#f4ecc8'); disc(x, 414, 44, 4, '#e0d8b0'); }
-      volcano(x, type === 'title' ? 256 : 370, hz, type === 'title' ? 480 : 300, type === 'title' ? 140 : 84, pal[3], pal[4]);
+      volcano(x, type === 'title' ? 256 : 370, hz, type === 'title' ? 480 : 300, type === 'title' ? 140 : 84, pal[3], null);
       P(x, 0, hz, 512, 66, pal[2]); for (let i = 0; i < 110; i++) P(x, r() * 512, hz + r() * 66, 4 + r() * 8, 1, type === 'title' ? '#e0703a' : type === 'fire' ? '#e05a1a' : shade(pal[2], .25));
       if (type === 'title') { P(x, 0, hz + 66, 512, 384, '#06060c'); for (const [bx, s] of [[30, 1], [482, -1]]) { for (let y = 140; y < 384; y++) P(x, bx + s * Math.round((384 - y) * .12), y, 8, 1, pal[5]); for (const [dx, dy, w] of [[24, 136, 62], [-8, 176, 54], [40, 200, 46], [6, 234, 40]]) { const cx = bx + s * dx; for (let k = 0; k < 9; k++) disc(x, Math.round(cx - w / 2 + k * w / 8), dy + ((k * 5) % 3), 8 + (k % 3), pal[5]); } } }
       else { ground(pal[5], hz + 66, [shade(pal[5], -.12), shade(pal[5], .1)]); }
@@ -713,4 +752,103 @@ function bgImg(type) {
     default: P(x, 0, 0, 512, 384, '#111');
   }
   return (BG_CACHE[type] = dot(c));
+}
+
+// ---------- 桜島の噴煙（背景の上に毎フレーム描いて、ゆらゆら立ちのぼらせる） ----------
+const PLUME = { beach: [400, 81, 1, '#9a9690'], storm: [400, 81, 1, '#555a66'], night: [400, 81, 1, '#3a4060'], fire: [400, 81, 1, '#4a3030'], title: [304, 113, 1.5, '#8a7a8a'], field: [422, 101, .8, '#a8acb4'] };
+function drawPlume(c, type, frame) {
+  const p = PLUME[type]; if (!p) return;
+  const [x0, y0, s, col] = p, n = 14;
+  for (let k = n - 1; k >= 0; k--) {
+    const t = ((frame * .35 + k * 230 / n) % 230) / 230, sway = Math.sin(frame / 60 + t * 5 + k) * 5 * s;
+    const px = x0 + t * 70 * s + sway, py = y0 - 4 - t * 95 * s, r = (5 + t * 22) * s;
+    c.globalAlpha = Math.min(1, t * 6) * (1 - t) * .85;
+    c.fillStyle = col; c.beginPath(); c.arc(px, py, r, 0, 7); c.fill();
+    c.fillStyle = mix(col, '#ffffff', .3); c.beginPath(); c.arc(px - r * .3, py - r * .3, r * .55, 0, 7); c.fill();
+  }
+  c.globalAlpha = 1;
+}
+// ---------- 地図（野山）の町・名所の目印（48x48。足元がタイルの下端） ----------
+const ICON_CACHE = {};
+function iconImg(kind) {
+  if (ICON_CACHE[kind]) return ICON_CACHE[kind];
+  const c = mk(48, 48), x = c.getContext('2d'), r = rnd(kind.length * 13 + 5);
+  ell(x, 24, 43, 20, 4, 'rgba(0,0,0,.28)');
+  const hut = (hx, hy, w, roof, wall = '#efe8d6') => { P(x, hx, hy, w, 9, wall); P(x, hx, hy + 5, w, 4, '#5a3e26'); P(x, hx + (w >> 1) - 2, hy + 3, 4, 6, '#3a2a1a'); for (let i = 0; i < 8; i++) P(x, hx - 2 + i * .3, hy - 1 - i, w + 4 - i * .6, 1, mix(shade(roof, .3), shade(roof, -.3), i / 7)); };
+  if (kind === 'castle') {
+    P(x, 4, 30, 40, 12, '#8a867c'); for (let i = 4; i < 44; i += 6) P(x, i, 30, 1, 12, '#6e6b62'); P(x, 4, 30, 40, 2, '#b8b3a5');
+    P(x, 14, 18, 20, 12, '#f0ece0'); for (let i = 0; i < 9; i++) P(x, 10 + i * .4, 17 - i, 28 - i * .8, 1, mix('#5a6278', '#2a2e3a', i / 8));
+    P(x, 18, 22, 3, 4, '#2a2a2a'); P(x, 27, 22, 3, 4, '#2a2a2a'); hut(2, 33, 10, '#4d5468'); hut(36, 33, 10, '#4d5468');
+  } else if (kind === 'town' || kind === 'onsen' || kind === 'port' || kind === 'buke') {
+    const roof = kind === 'buke' ? '#3f4556' : '#8a6a3a';
+    if (kind === 'buke') { P(x, 2, 36, 44, 5, '#2a5e2e'); for (let i = 2; i < 46; i += 4) disc(x, i, 36, 2, '#3a7a3c'); }
+    hut(4, 22, 16, roof); hut(26, 18, 16, roof); hut(14, 32, 18, roof);
+    if (kind === 'onsen') for (let k = 0; k < 3; k++) { disc(x, 10 + k * 12, 10 - k * 2, 4, '#f4f4f4'); disc(x, 13 + k * 12, 6 - k * 2, 3, '#ffffff'); }
+    if (kind === 'port') { P(x, 30, 40, 16, 6, '#2f66a8'); P(x, 32, 36, 12, 4, '#6a4426'); P(x, 37, 26, 2, 10, '#4a3220'); P(x, 39, 27, 7, 7, '#e8e0d0'); }
+  } else if (kind === 'seki') {
+    P(x, 6, 18, 4, 24, '#4a3220'); P(x, 38, 18, 4, 24, '#4a3220'); for (let i = 0; i < 6; i++) P(x, 2 + i * .5, 17 - i, 44 - i, 1, mix('#5a6278', '#2a2e3a', i / 5));
+    P(x, 10, 26, 28, 3, '#6a4a2c'); P(x, 4, 38, 40, 4, '#8a867c'); for (let k = 0; k < 2; k++) { P(x, 14 + k * 16, 30, 4, 10, '#c8a060'); }
+  } else if (kind === 'cave') {
+    for (let i = 0; i < 7; i++) disc(x, 6 + i * 6, 26 - Math.abs(3 - i) * 3, 9, i % 2 ? '#24502a' : '#2d6233');
+    ell(x, 24, 34, 9, 9, '#120c0a'); ell(x, 24, 36, 7, 7, '#000');
+  } else if (kind === 'shrine') {
+    P(x, 10, 20, 4, 22, '#c8402a'); P(x, 34, 20, 4, 22, '#c8402a'); P(x, 4, 16, 40, 4, '#2a1a1a'); P(x, 6, 18, 36, 3, '#c8402a'); P(x, 8, 25, 32, 3, '#c8402a'); P(x, 22, 20, 4, 5, '#2a1a1a');
+  }
+  return (ICON_CACHE[kind] = dot(c, '#1c1219'));
+}
+// 鳥居（マップの飾り。96x88、柱は左右のタイルの真ん中）
+let TORII_IMG = null;
+function toriiImg() {
+  if (TORII_IMG) return TORII_IMG;
+  const c = mk(96, 88), x = c.getContext('2d'), V = '#c8402a', VL = '#e86a4a', VD = '#8a2a1a';
+  ell(x, 48, 84, 44, 4, 'rgba(0,0,0,.25)');
+  for (const px of [13, 77]) { P(x, px, 18, 7, 66, V); P(x, px, 18, 2, 66, VL); P(x, px + 5, 18, 2, 66, VD); P(x, px - 2, 78, 11, 6, '#2a1a1a'); }
+  for (let i = 0; i < 7; i++) P(x, 2 + i * .2 - (6 - i) * .5, 6 + i, 92 - i * .4 + (6 - i), 1, i < 3 ? '#2a1a1a' : V);
+  P(x, 0, 4, 96, 3, '#2a1a1a'); P(x, -2, 2, 6, 3, '#2a1a1a'); P(x, 92, 2, 6, 3, '#2a1a1a');
+  P(x, 8, 22, 80, 5, V); P(x, 8, 22, 80, 1, VL); P(x, 44, 12, 8, 10, '#2a1a1a'); P(x, 45, 13, 6, 8, '#e8d8a0');
+  return (TORII_IMG = dot(c, '#1c1219'));
+}
+// 開聞岳（地図の飾り。円すい形の「薩摩富士」）
+let KAIMON_IMG = null;
+function kaimonImg() {
+  if (KAIMON_IMG) return KAIMON_IMG;
+  const c = mk(160, 128), x = c.getContext('2d');
+  ell(x, 80, 118, 76, 10, '#2e5a2a');
+  volcano(x, 74, 120, 150, 108, '#4a6a48', null);
+  for (let i = 0; i < 60; i++) disc(x, 20 + Math.random() * 120, 100 + Math.random() * 18, 2, Math.random() < .5 ? '#2e5a2a' : '#4a8a3c');
+  return (KAIMON_IMG = dot(c, '#14200f'));
+}
+
+// 岩風呂（一枚絵）：ごつごつした岩で縁を囲み、湯は奥ほど深い色。w,h はタイル数
+const ONSEN_CACHE = {};
+function onsenImg(w, h) {
+  const k = w + 'x' + h; if (ONSEN_CACHE[k]) return ONSEN_CACHE[k];
+  const W = w * 32 + 28, H = h * 32 + 34, c = mk(W, H), x = c.getContext('2d'), r = rnd(w * 31 + h * 7);
+  const L = 14, T = 16, R = L + w * 32, B = T + h * 32;
+  ell(x, W / 2 + 3, B + 8, W / 2 - 6, 9, 'rgba(0,0,0,.28)');
+  const rock = (cx, cy, rw, rh) => {
+    const base = ['#6e675c', '#7c7468', '#5f5a52', '#837a6c'][(r() * 4) | 0];
+    ell(x, cx + 1, cy + 2, rw + 1, rh + 1, '#221c18'); ell(x, cx, cy, rw, rh, base);
+    ell(x, cx - rw * .25, cy - rh * .3, rw * .62, rh * .5, shade(base, .22)); P(x, cx - rw * .55, cy - rh * .62, rw * .5, 1, shade(base, .45));
+    ell(x, cx + rw * .3, cy + rh * .35, rw * .5, rh * .35, shade(base, -.25));
+    if (r() < .4) for (let i = 0; i < 4; i++) P(x, cx - rw * .5 + r() * rw, cy - rh * .6 + r() * rh * .4, 2, 1, r() < .5 ? '#4a7a3a' : '#5e8c44');
+  };
+  // 奥の岩（湯より先に描く）
+  for (let px = L - 2; px <= R + 2; px += 12 + r() * 5) rock(px, T - 5 + r() * 3, 9 + r() * 4, 9 + r() * 3);
+  for (let px = L - 6; px <= R + 6; px += 10 + r() * 4) rock(px, T + 3 + r() * 3, 9 + r() * 4, 8 + r() * 3);
+  for (let py = T + 8; py <= B - 6; py += 10 + r() * 4) { rock(L + r() * 2, py, 8 + r() * 3, 8 + r() * 3); rock(R - r() * 2, py, 8 + r() * 3, 8 + r() * 3); }
+  // 湯：岩の内側。縁は浅く明るく、奥ほど深い
+  const ix = L + 8, iy = T + 11, iw = R - L - 16, ih = B - T - 17;
+  for (let j = 0; j < ih; j++) for (let i = 0; i < iw; i += 2) {
+    const ex = Math.min(i, iw - i) / 10, ey = Math.min(j, ih - j) / 8, d = Math.min(1, Math.min(ex, ey));
+    if ((i < 3 || i > iw - 4) && (j < 3 || j > ih - 4)) continue;
+    P(x, ix + i, iy + j, 2, 1, mix('#7ccad4', '#2f7a8c', d * .9));
+  }
+  for (let k = 0; k < iw * ih / 90; k++) { const px = ix + 4 + r() * (iw - 10), py = iy + 4 + r() * (ih - 8); P(x, px, py, 4 + r() * 6, 1, '#b8eef2'); }
+  P(x, ix + 4, iy + 2, iw * .5, 1, '#d8f8f8');
+  // 竹の湯口（左奥から湯が落ちる）
+  P(x, L + 8, T - 6, 3, 16, '#6a8a3a'); P(x, L + 8, T - 6, 1, 16, '#9ab85a'); P(x, L + 8, T - 6, 16, 3, '#6a8a3a'); P(x, L + 22, T - 4, 2, 12, '#d8f4f8'); disc(x, L + 23, T + 10, 3, '#e8fcff');
+  // 手前の岩（湯の縁にせり出す）
+  for (let px = L - 4; px <= R + 4; px += 11 + r() * 5) rock(px, B - 2 + r() * 2, 10 + r() * 4, 8 + r() * 2);
+  return (ONSEN_CACHE[k] = dot(c, '#1a1410'));
 }

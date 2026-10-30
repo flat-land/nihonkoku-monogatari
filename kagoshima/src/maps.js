@@ -82,7 +82,7 @@ const MAPS = {
           npc(14, 17, 'togo', STORY.togoWait, { cond: () => G.chapter === 1 && !F('togo') }),
           npc(15, 12, 'elder', T('elder')), npc(22, 12, 'woman', T('woman')), npc(9, 6, 'child', T('child')),
           npc(20, 17, 'student', T('student'), { cond: chFrom(8, 8) }),
-          npc(6, 13, 'rival', STORY.rival8, { cond: ch(8), mark: true }),
+          npc(6, 13, 'rival', STORY.rival8, { cond: () => G.chapter === 8 && !F('in_rival'), mark: true }),
           pot(6, 6, 'kajiya1', 'karaimo'), pot(25, 21, 'kajiya2', 'kokuto'), pot(30, 21, 'kajiya3', 'omamori'),
           { x: 29, y: 13, spr: 'sign', talk: () => N('立て札：「甲突川の石橋。\n東へ行けば 城下の外れ」') },
         ],
@@ -98,14 +98,14 @@ const MAPS = {
       rect(g, 4, 13, 3, 3, 'T'); rect(g, 14, 9, 3, 3, 'T'); rect(g, 24, 5, 3, 2, 'T'); rect(g, 6, 5, 2, 2, 'T'); rect(g, 16, 15, 4, 2, 'b');
       dots(g, 'T', [[3, 7], [9, 16], [25, 9], [27, 16], [13, 4]]);
       dots(g, 'R', [[5, 3], [18, 3], [23, 3]]);
-      rect(g, 22, 15, 4, 3, 'F'); g[13][29] = (G.chapter === 3 || G.chapter === 8) ? ',' : 'T';
+      rect(g, 22, 15, 4, 3, 'F'); g[13][29] = IN_SATSUMA() ? ',' : 'T';
       return {
         name: '甲突川の河原', g, bbg: 'field', place: 'kotsuki', bgm: 'field',
         night: () => (F('gesshoQuest') && !F('gessho')),
         weather: () => G.chapter === 0 || G.chapter === 8 ? 'ash' : null,
         enc: () => G.chapter >= 8 ? ENC.kago8 : G.chapter >= 1 ? ENC.kaigan1.slice(0, 4) : ENC.kotsuki, encTiles: ['.', 's'], rare: G.chapter >= 7 ? RARE.meiji : RARE.early,
-        labels: [[26, 13, '高見馬場の若衆'], [3, 12, '馬方']],
-        warps: [{ x: 0, y: 10, to: 'kajiya', x2: 30, y2: 11, dir: 1 }, { x: 29, y: 13, to: 'kirishima', x2: 16, y2: 22, dir: 3, cond: () => G.chapter === 3 || G.chapter === 8 }],
+        labels: [[26, 13, '高見馬場の若衆'], [3, 12, '馬方'], [29, 13, '野山へ（薩摩の国）']],
+        warps: [{ x: 0, y: 10, to: 'kajiya', x2: 30, y2: 11, dir: 1 }, { x: 29, y: 13, to: 'satsuma', x2: 23, y2: 21, dir: 1, cond: IN_SATSUMA }],
         triggers: [{ x: 18, y: 6, w: 4, h: 3, cond: () => G.chapter === 8 && F('rival8') && !F('senkichi8'), run: STORY.senkichi8 }],
         npcs: [
           npc(27, 13, 'rival', STORY.rival, { dir: 1, cond: () => G.chapter <= 1, mark: true }),
@@ -190,22 +190,24 @@ const MAPS = {
       rect(g, 16, 7, 1, 16, ','); rect(g, 4, 15, 24, 1, ','); rect(g, 16, 3, 1, 5, ',');
       rect(g, 5, 10, 4, 3, 'O'); rect(g, 22, 17, 4, 3, 'O');
       const inn = house(g, 4, 17, 6, 6); const inn2 = house(g, 22, 10, 5, 24);
-      dots(g, 'T', [[11, 9], [12, 12], [20, 9], [27, 14], [3, 21], [12, 20], [20, 21], [27, 21], [10, 18]]);
+      dots(g, 'T', [[11, 9], [12, 12], [20, 9], [27, 14], [3, 21], [20, 21], [27, 21]]);
+      rect(g, 10, 17, 5, 2, 'H'); rect(g, 10, 19, 5, 1, 'h'); _BLD.push({ x: 10, y: 17, w: 5, door: 12, style: 'jinja' }); dots(g, 'l', [[10, 21], [14, 21]]);
       rect(g, 1, 8, 3, 6, 'b'); rect(g, 28, 8, 3, 6, 'b');
       g[23][16] = ',';
       return {
-        name: G.chapter === 8 ? '霧島・日当山温泉' : '霧島', g, bbg: 'mountain', place: 'kirishima', bgm: 'field', weather: () => 'fireflies',
-        enc: () => G.chapter === 3 ? ENC.kirishima : null, rare: RARE.early,
-        labels: [[16, 2, '高千穂峰'], [6, 11, '塩浸温泉'], [6, 17, '宿']],
-        warps: [{ x: 16, y: 23, to: 'kajiya', x2: 30, y2: 11, dir: 1 }],
+        name: G.chapter === 8 ? '霧島・日当山温泉' : '霧島', g, bbg: 'mountain', place: 'kirishima', bgm: 'field', weather: () => 'fireflies', onEnter: () => STORY3.kirishimaEnter(),
+        props: [{ x: 11, y: 20, img: 'torii' }, { x: 5, y: 10, img: 'onsen', w: 4, h: 3 }, { x: 22, y: 17, img: 'onsen', w: 4, h: 3 }],
+        enc: () => G.chapter === 3 && G.py <= 8 ? ENC.kirishima : null, rare: RARE.early,
+        labels: [[16, 2, '高千穂峰'], [6, 11, '塩浸温泉'], [6, 17, '宿'], [12, 17, '霧島神宮'], [16, 23, '野山へ']],
+        warps: [{ x: 16, y: 23, to: 'satsuma', x2: 36, y2: 7, dir: 0 }],
         triggers: [{ x: 14, y: 1, w: 5, h: 3, cond: () => G.chapter === 3 && F('kirishimaIn') && !F('sakahoko'), run: STORY.sakahoko }],
         houses: [hs(...inn, '湯治宿', { npcs: [npc(5, 4, 'innkeeper', STORY.inn)] }), hs(...inn2, '山の茶屋', { kind: 'shop', npcs: [npc(4, 3, 'merchant', () => shopTalk('dougu')), npc(7, 5, 'woman', STORY.chaya)] })],
-        look: { '16,1': () => N('山頂に、青銅の矛が 突き立っている。\n「天の逆鉾」――神話の時代から伝わる という。') },
+        look: { '6,9': () => STORY3.iwaburo(), '9,11': () => STORY3.iwaburo(), '16,1': () => N('山頂に、青銅の矛が 突き立っている。\n「天の逆鉾」――神話の時代から伝わる という。') },
         npcs: [
           npc(8, 13, 'ryoma', STORY.ryomaOnsen, { cond: () => G.chapter === 3 && F('sakahoko') && !F('onsen3'), mark: true }),
           npc(9, 13, 'oryo', (n) => STORY.talk('oryo', n), { cond: () => G.chapter === 3 }),
           npc(10, 11, 'saigo', STORY.onsen8, { cond: () => G.chapter === 8 && !F('onsen8'), mark: true }),
-          npc(14, 16, 'umakata', () => rentHorse(40)), npc(13, 16, 'horse', () => rentHorse(40)),
+          npc(19, 16, 'umakata', () => rentHorse(40)), npc(20, 16, 'horse', () => rentHorse(40)), npc(15, 20, 'kannushi', () => STORY3.shrine('kirishima'), { dir: 1 }),
           chest(29, 20, 'kr1', 'kurobuta'), pot(2, 20, 'kr2', 'mikan'), chest(18, 5, 'kr3', 'kubiwa'),
         ],
       };
@@ -218,25 +220,27 @@ const MAPS = {
       const H = [];
       for (let yy = 2; yy < 20; yy += 7) for (let xx = 2; xx < 34; xx += 8) { if (xx <= 10 && yy === 2) continue; if (xx >= 26 && yy >= 16) continue; const hh = house(g, xx, yy, 6, xx + 3); H.push(hh); }
       rect(g, 2, 2, 12, 6, '#'); rect(g, 3, 3, 10, 4, ','); const hantei = house(g, 4, 3, 7, 7); g[7][7] = ','; g[4][12] = F('hanzoOpen') ? 'D' : 'L'; g[3][12] = 'H';
-      rect(g, 26, 16, 8, 8, '.'); dots(g, 'T', [[27, 17], [32, 17], [27, 22], [32, 22]]); dots(g, 'J', [[29, 19]]); dots(g, 'l', [[28, 20], [31, 20]]);
+      rect(g, 26, 16, 8, 8, '.'); dots(g, 'T', [[27, 17], [32, 17], [27, 22], [32, 22]]); rect(g, 28, 16, 4, 2, 'H'); rect(g, 28, 18, 4, 1, 'h'); _BLD.push({ x: 28, y: 16, w: 4, door: 29, style: 'jinja' }); dots(g, 'l', [[27, 19], [32, 19]]);
       g[0][18] = ';'; g[25][18] = ';';
       if (F('kinmonFire') && !F('kinmonEnd')) dots(g, 'f', [[10, 10], [20, 3], [22, 10], [31, 4], [14, 17], [5, 17]]);
       const T = (id) => (n) => STORY.talk(id, n);
       return {
         name: '京の町', g, bbg: 'kyoto', place: G.chapter === 2 ? 'hamaguri' : null, bgm: () => (F('kinmonFire') && !F('kinmonEnd')) ? 'war' : 'kyoto', noRide: true,
         weather: () => (F('kinmonFire') && !F('kinmonEnd')) ? 'embers' : G.chapter === 3 ? 'snow' : null,
-        enc: () => (G.chapter === 2 && F('kyoto2') && !F('kinmonEnd')) ? ENC.kyoto : null, encTiles: [';'], rare: RARE.kyoto,
+        props: [{ x: 28, y: 20, img: 'torii' }],
+        // 町の中で敵が出るのは、どんどん焼けで町が燃えているあいだだけ
+        enc: () => (G.chapter === 2 && F('kinmonFire') && !F('kinmonEnd')) ? ENC.kyoto : null, encTiles: [';'], rare: RARE.kyoto,
         labels: [[7, 3, '薩摩藩邸'], [18, 0, '御所へ'], [18, 25, '伏見へ'], [29, 19, '神社']],
         warps: [{ x: 18, y: 0, to: 'gosho', x2: 15, y2: 18, dir: 3, cond: () => G.chapter === 2 || G.chapter === 4 }, { x: 18, y: 25, to: G.chapter === 4 ? 'toba' : 'fushimi', x2: G.chapter === 4 ? 2 : 13, y2: G.chapter === 4 ? 10 : 1, dir: 0, cond: () => G.chapter === 3 || G.chapter === 4 }],
         locks: [{ x: 12, y: 4, key: 'key_hanzo', flag: 'hanzoOpen' }],
         houses: [
           hs(...hantei, '薩摩藩邸（二本松）', { w: 15, place: 'hamaguri', npcs: [npc(7, 4, 'komatsu', STORY.komatsu, { mark: true }), npc(3, 4, 'kido', STORY.kido3, { cond: () => G.chapter === 3 && !F('satcho') }), npc(11, 4, 'ryoma', STORY.ryoma3, { cond: () => G.chapter === 3 && !F('satcho') })], items: [chest(13, 5, 'hantei1', 'key_hanzo')] }),
-          { x: 12, y: 4, name: '藩邸の蔵', kind: 'kura', w: 9, h: 7, items: [chest(2, 3, 'hz1', 'masakiyo'), chest(6, 3, 'hz2', 'kurobuta', 3), chest(4, 5, 'hz3', 'kiriko')] },
+          { x: 12, y: 4, name: '藩邸の蔵', kind: 'kura', w: 9, h: 7, items: [chest(2, 3, 'hz1', 'masakiyo'), chest(6, 3, 'hz2', 'kurobuta', 3), chest(6, 5, 'hz3', 'kiriko')] },
           ...H.map((h, i) => hs(...h, ['武具屋', '道具屋', '茶屋', '町家', '宿屋', '町家', '寺', '町家', '町家', '町家', '町家', '町家'][i] || '町家', i === 0 ? { kind: 'shop', npcs: [npc(5, 3, 'merchant', () => shopTalk('kyoto'))] } : i === 1 ? { kind: 'shop', npcs: [npc(5, 3, 'merchant', () => shopTalk('kyotoDougu'))] } : i === 2 ? { npcs: [npc(5, 4, 'woman', STORY.chaya)] }: i === 4 ? { npcs: [npc(5, 4, 'innkeeper', STORY.inn)] } : i === 6 ? { npcs: [npc(5, 4, 'monk', T('kyotoMonk'))] } : { npcs: [npc(5, 4, i % 2 ? 'woman' : 'elder', T('kyoto' + (i % 3)))], items: i % 3 === 0 ? [pot(8, 4, 'kh' + i, ['chiran', 'tsukeage', 'horoku', 'karukan'][i % 4])] : [] })),
         ],
         npcs: [
           npc(16, 8, 'woman', T('kyotoA')), npc(24, 15, 'elder', T('kyotoB')), npc(9, 22, 'child', T('kyotoC')),
-          npc(18, 1, 'satsumasoldier', T('kyotoGate'), { cond: () => G.chapter === 3 }),
+          npc(18, 1, 'satsumasoldier', T('kyotoGate'), { cond: () => G.chapter === 3 }), npc(31, 20, 'kannushi', () => STORY3.shrine('kyoto'), { dir: 1 }),
         ],
       };
     },
@@ -255,7 +259,7 @@ const MAPS = {
         enc: () => G.chapter === 2 && F('kinmon') && !F('kijima') ? ENC.kyoto : null, encTiles: [','],
         labels: [[14, 5, '蛤御門']],
         warps: [{ x: 15, y: 19, to: 'kyoto', x2: 18, y2: 1, dir: 0 }],
-        triggers: [{ x: 11, y: 6, w: 8, h: 3, cond: () => G.chapter === 2 && F('kinmon') && !F('kijima'), run: STORY.kijima }],
+        triggers: [{ x: 11, y: 6, w: 8, h: 3, cond: () => G.chapter === 2 && F('kinmon') && !F('kijima'), run: STORY.kijima, boss: 'kijima', bx: 15, by: 6 }],
         npcs: [
           npc(14, 7, 'satsumasoldier', (n) => STORY.talk('goshoGuard', n), { cond: () => !(G.chapter === 2 && F('kinmon')) }),
           npc(16, 12, 'satsumasoldier', STORY.kinmonStart, { cond: () => G.chapter === 2 && F('kyoto2') && !F('kinmon'), mark: true }),
@@ -300,7 +304,7 @@ const MAPS = {
         enc: () => F('toba') && !F('hijikata') ? ENC.toba : null, encTiles: ['u', ','], rare: RARE.kyoto,
         labels: [[30, 8, '伏見奉行所'], [2, 10, '京へ']],
         warps: [{ x: 0, y: 10, to: 'kyoto', x2: 18, y2: 24, dir: 3 }],
-        triggers: [{ x: 22, y: 9, w: 3, h: 3, cond: () => F('toba') && !F('hijikata'), run: STORY.hijikataBoss }],
+        triggers: [{ x: 22, y: 9, w: 3, h: 3, cond: () => F('toba') && !F('hijikata'), run: STORY.hijikataBoss, boss: 'hijikata', bx: 24, by: 10, bdir: 1 }],
         npcs: [
           npc(5, 9, 'oyama', STORY.tobaCamp, { cond: () => G.chapter === 4 && !F('toba'), mark: true }),
           npc(6, 11, 'merchant', () => shopTalk('jinchu')),
@@ -323,7 +327,7 @@ const MAPS = {
       const T = (id) => (n) => STORY.talk(id, n);
       return {
         name: '江戸', g, bbg: 'town', place: 'satsumahantei', bgm: () => F('ueno') && !F('uenoEnd') ? 'war' : 'town', noRide: true,
-        enc: () => F('muketsu') && !F('uenoEnd') ? ENC.edo : null, encTiles: [';', ','], rare: RARE.edo,
+        enc: null,
         labels: [[29, 14, '薩摩藩邸（田町）'], [24, 6, '上野・寛永寺 黒門']],
         warps: [],
         triggers: [{ x: 22, y: 9, w: 6, h: 2, cond: () => F('muketsu') && !F('uenoEnd'), run: STORY.ueno }],
@@ -349,8 +353,8 @@ const MAPS = {
         enc: () => G.chapter === 6 && !F('aizuEnd') ? ENC.aizu : null, encTiles: ['.', ','], rare: RARE.edo,
         labels: [[16, 4, '鶴ヶ城'], [5, 19, '新政府軍の陣']],
         triggers: [
-          { x: 15, y: 13, w: 4, h: 2, cond: () => G.chapter === 6 && F('aizu6') && !F('yae'), run: STORY.yaeBoss },
-          { x: 15, y: 11, w: 4, h: 2, cond: () => G.chapter === 6 && F('yae') && !F('aizuEnd'), run: STORY.tsurugajo },
+          { x: 15, y: 13, w: 4, h: 2, cond: () => G.chapter === 6 && F('aizu6') && !F('yae'), run: STORY.yaeBoss, boss: 'yae', bx: 17, by: 13 },
+          { x: 15, y: 11, w: 4, h: 2, cond: () => G.chapter === 6 && F('yae') && !F('aizuEnd'), run: STORY.tsurugajo, boss: 'bakufusoldier', bx: 15, by: 11, warn: '鶴ヶ城の城門が 目の前だ。\n【ボス戦・合戦】準備はいいですか？' },
         ],
         houses: [hs(...camp, '新政府軍の陣', { npcs: [npc(5, 3, 'commander', STORY.aizuCamp, { cond: () => !F('aizu6'), mark: true }), npc(8, 4, 'merchant', () => shopTalk('jinchu'))] }), hs(...camp2, '陣小屋', { npcs: [npc(5, 4, 'satsumasoldier', (n) => STORY.talk('aizuSoldier', n))], items: [chest(2, 3, 'az1', 'yasuyo'), chest(8, 3, 'az2', 'keihan')] })],
         npcs: [chest(2, 2, 'az3', 'kurobuta', 2), pot(29, 2, 'az4', 'meishu')],
@@ -369,7 +373,7 @@ const MAPS = {
       g[23][17] = ','; g[12][0] = ',';
       return {
         name: G.chapter >= 13 ? '東京・紀尾井坂' : '東京・銀座', g, bbg: 'tokyo', place: G.chapter >= 13 ? 'kioizaka' : 'ginza', bgm: () => G.chapter >= 13 ? 'sad' : 'town', noRide: true, weather: () => G.chapter >= 13 ? 'petals' : null,
-        enc: () => G.chapter === 7 && !F('seihen') ? ENC.tokyo : null, encTiles: [';', ','], rare: RARE.meiji,
+        enc: null,
         labels: [[4, 2, '太政官'], [28, 15, '西郷邸']],
         triggers: [{ x: 0, y: 11, w: 2, h: 2, cond: () => G.chapter >= 13 && !F('kioi'), run: STORY.kioizaka }],
         houses: H.map((h, i) => hs(...h, ['太政官', '武器商', '洋品店', '牛鍋屋', '煉瓦蔵', '道具屋', '新聞社', '西郷邸'][i], [
@@ -402,7 +406,7 @@ const MAPS = {
         name: '熊本城', g, bbg: 'castle', place: 'kumamotojo', bgm: 'war', weather: () => 'snow',
         enc: () => G.chapter === 9 && !F('kumaEnd') ? (SAT() ? ENC.kumamotoS : ENC.kumamotoG) : null, encTiles: ['.', ','], rare: RARE.meiji,
         labels: [[16, 4, '熊本城'], [5, 18, '陣']],
-        triggers: [{ x: 14, y: 12, w: 4, h: 2, cond: () => G.chapter === 9 && F('kuma9') && !F('kumaEnd'), run: STORY.kumamotoBoss }],
+        triggers: [{ x: 14, y: 12, w: 4, h: 2, cond: () => G.chapter === 9 && F('kuma9') && !F('kumaEnd'), run: STORY.kumamotoBoss, boss: () => SAT() ? 'tani' : 'satsumasoldier', bx: 17, by: 12 }],
         houses: [hs(...camp, SAT() ? '薩軍の本営' : '政府軍の陣', { npcs: [npc(5, 3, SAT() ? 'saigo' : 'yamagata', STORY.kumaCamp, { cond: () => !F('kuma9'), mark: true }), npc(8, 4, 'merchant', () => shopTalk('jinchu'))] }), hs(...camp2, '陣小屋', { npcs: [npc(5, 4, 'smith', () => shopTalk('jinchuArms'))], items: [chest(2, 3, 'km1', 'meishu'), chest(8, 3, 'km2', 'horoku2', 3)] })],
         npcs: [pot(2, 21, 'km3', 'keihan'), pot(29, 21, 'km4', 'mikan')],
       };
@@ -421,7 +425,7 @@ const MAPS = {
         name: '田原坂', g, bbg: 'rain', place: 'tabaruzaka', bgm: 'war', weather: () => 'rain',
         enc: () => G.chapter === 10 && !F('tabaruEnd') ? (SAT() ? ENC.tabaruS : ENC.tabaruG) : null, encTiles: [',', 'u'], rare: RARE.meiji,
         labels: [[16, 10, '田原坂']],
-        triggers: [{ x: 26, y: 9, w: 3, h: 4, cond: () => G.chapter === 10 && F('tabaru10') && !F('tabaruEnd'), run: STORY.tabaruBoss }],
+        triggers: [{ x: 26, y: 9, w: 3, h: 4, cond: () => G.chapter === 10 && F('tabaru10') && !F('tabaruEnd'), run: STORY.tabaruBoss, boss: () => SAT() ? 'soldier' : 'rival', bx: 28, by: 10, bdir: 1 }],
         npcs: [
           npc(4, 10, SAT() ? 'beppu' : 'yamagata', STORY.tabaruCamp, { cond: () => G.chapter === 10 && !F('tabaru10'), mark: true }),
           npc(3, 11, 'merchant', () => shopTalk('jinchu')), npc(3, 9, 'smith', () => shopTalk('jinchuArms')),
@@ -442,7 +446,7 @@ const MAPS = {
         name: '可愛岳と長井村', g, bbg: 'mountain', place: 'enodake', bgm: () => F('enoEnd') ? 'sad' : 'war', night: () => F('enoNight') && !F('enoEnd'),
         enc: () => G.chapter === 11 && !F('enoEnd') ? (SAT() ? ENC.enoS : ENC.enoG) : null, encTiles: ['.', ',', 'u'], rare: RARE.meiji,
         labels: [[8, 15, '長井村'], [22, 6, '可愛岳'], [28, 10, '山頂']],
-        triggers: [{ x: 26, y: 9, w: 5, h: 4, cond: () => G.chapter === 11 && F('enoNight') && !F('enoEnd'), run: STORY.enoBoss }],
+        triggers: [{ x: 26, y: 9, w: 5, h: 4, cond: () => G.chapter === 11 && F('enoNight') && !F('enoEnd'), run: STORY.enoBoss, boss: () => SAT() ? 'soldier' : 'satsumasoldier', bx: 29, by: 11, bdir: 1 }],
         houses: [hs(...H[0], '長井村の家（宿陣）', { place: 'enodake', npcs: [npc(5, 3, 'saigo', STORY.nagai, { cond: () => SAT() && !F('nagai'), mark: true }), npc(5, 3, 'tsun', STORY.tsunGov, { cond: () => GOV() && !F('nagai'), mark: true })], items: [chest(9, 4, 'en1', 'meishu')] }), hs(...H[1], '村の家', { npcs: [npc(5, 4, 'elder', (n) => STORY.talk('nagaiVillager', n))], items: [pot(8, 4, 'en2', 'keihan')] }), hs(...H[2], '村の家', { npcs: [npc(5, 4, 'merchant', () => shopTalk('jinchu'))] })],
         npcs: [chest(20, 20, 'en3', 'horoku2', 3), chest(29, 15, 'en4', 'kurobuta', 3)],
       };

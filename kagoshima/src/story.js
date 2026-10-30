@@ -448,8 +448,8 @@ const STORY = {
     await fadeOut(800);
     await still(['三月。龍馬とお龍は、薩摩の船で鹿児島へ渡った。', '二人は霧島の山々を巡り、温泉に浸かり、\n高千穂峰に登った。', 'のちに「日本で初めての新婚旅行」とも\n呼ばれる旅である。'], 'mountain');
     flag('kirishimaIn'); chron('honeymoon');
-    enterMap('kirishima', 16, 21, 3); await fadeIn();
-    await Q([['ryoma', 'うわあ、まっことええ所じゃのう！\n新八、あの山のてっぺんまで登るぜよ！', 'うわあ、本当にいい所だなあ！\n新八、あの山のてっぺんまで登るぞ！'], '【目的】霧島の北、高千穂峰の山頂へ登ろう。']);
+    enterMap('kaigan', 12, 14, 3); await fadeIn();
+    await Q([['ryoma', 'ここが鹿児島か！ 桜島が でっかいのう！', 'ここが鹿児島か！ 桜島が 大きいなあ！'], ['ryoma', '新八、霧島まで 案内しとうせ。\nお龍は 先に駕籠で向かわせたき。', '新八、霧島まで 案内してくれ。\nお龍は 先に駕籠で向かわせたから。'], '【目的】甲突川の河原の東から 野山（薩摩の国）へ出て、\n北東の霧島へ向かおう。']);
   },
   async sakahoko() {
     flag('sakahoko'); visit('takachiho');

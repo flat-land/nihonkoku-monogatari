@@ -84,7 +84,13 @@ function waitOk(ms, tap = true) {
     UI.push(h); if (ms) t = setTimeout(fin, ms);
   });
 }
-function toast(text) { const t = el('div', 'toast'); t.textContent = text; setTimeout(() => t.classList.add('out'), 1600); setTimeout(() => t.remove(), 2300); }
+// 図鑑・年表の知らせ：同時に出ても重ならないよう、空いている段に順に並べる
+const TOAST_ROWS = [];
+function toast(text) {
+  let row = 0; while (TOAST_ROWS[row]) row++;
+  const t = el('div', 'toast'); t.textContent = text; t.style.top = (30 + row * 18) + 'px'; TOAST_ROWS[row] = t;
+  setTimeout(() => t.classList.add('out'), 1800 + row * 300); setTimeout(() => { t.remove(); if (TOAST_ROWS[row] === t) TOAST_ROWS[row] = null; }, 2500 + row * 300);
+}
 
 // 会話。who=人物ID, text=鹿児島弁などの元のセリフ, std=標準語訳
 const DLG = { el: null, sub: null, hideT: null };
@@ -134,7 +140,7 @@ const S = (who, t, std) => say(who, t, std);
 
 function choose(items, o = {}) {
   return new Promise(res => {
-    const box = place(el('div', 'win menu'), o.x ?? 8, o.y ?? 8, o.w ?? 140);
+    const box = place(el('div', 'win menu' + (o.cls ? ' ' + o.cls : '')), o.x ?? 8, o.y ?? 8, o.w ?? 140);
     if (o.maxH) { box.style.maxHeight = o.maxH + 'px'; box.style.overflowY = 'auto'; }
     if (o.title) el('div', 'ttl', box).textContent = o.title;
     let idx = Math.max(0, Math.min(o.start || 0, items.length - 1));
@@ -158,18 +164,22 @@ function choose(items, o = {}) {
         else if (k === 'cancel' && o.cancel !== false) { SFX.play('cancel'); close(-1); }
       }
     };
+    if (o.bottom) box.style.top = Math.max(4, o.bottom - box.offsetHeight) + 'px';
     UI.push(h); upd();
   });
 }
 async function ask(who, text, std) {
-  await say(who, text, std); keepDlg();
-  const r = await choose(['はい', 'いいえ'], { x: 300, y: 130, w: 76 });
+  await say(who, text, std); keepDlg(); if (DLG.bust) DLG.bust.style.display = 'none';
+  const r = await choose(['はい', 'いいえ'], { x: 154, bottom: 186, w: 76, cls: 'pick' });
   hideDlg(); return r === 0;
 }
 // 選択肢つきの問い（選択肢は {label, ...}）
 async function pickOne(who, text, std, opts, o = {}) {
+  // 選択肢は画面の真ん中に小窓で出す（顔絵や人物に重ならないよう、顔絵はいったん隠す）
   if (text) { await say(who, text, std); keepDlg(); }
-  const r = await choose(opts, { x: o.x ?? 150, y: o.y ?? 110, w: o.w ?? 226, cancel: false });
+  if (DLG.bust) DLG.bust.style.display = 'none';
+  const w = o.w ?? 226;
+  const r = await choose(opts, { x: Math.round((SW - w) / 2), bottom: text ? 186 : 170, w, cancel: false, cls: 'pick' });
   hideDlg(); return r;
 }
 function panel(html, x, y, w, h, cls = '') { const e = place(el('div', 'win ' + cls), x, y, w, h); e.innerHTML = html; return e; }
@@ -216,6 +226,7 @@ function rebuildChain() { G.chain = G.party.slice(1).map(() => ({ x: G.px, y: G.
 function partyLv() { return Math.round(G.party.reduce((s, id) => s + G.mem[id].lv, 0) / G.party.length); }
 // 連れて行けるのは4人まで。ほかの仲間は「控え」として、道場・宿・茶屋・陣で入れ替えられる
 const PARTY_MAX = 4;
+const FREE_MATES = ['oyuzu', 'gonbe', 'gensai', 'tetsu'];
 async function roster() {
   if (G.party.length + (G.waiting || []).length < 2) { await N('入れ替えられる仲間が まだいない。'); return; }
   let cur = 0;
@@ -244,7 +255,8 @@ async function join(id, lv, quiet) {
   const m = G.mem[id]; m.hp = mhp(m); m.ki = mki(m);
   G.waiting = (G.waiting || []).filter(p => p !== id);
   let benched = null;
-  if (!G.party.includes(id)) { G.party.push(id); if (G.party.length > PARTY_MAX) { benched = G.party.splice(PARTY_MAX - 1, 1)[0]; G.waiting.push(benched); } }
+  // 4人を超えたら、物語に関わらない仲間（お柚・権兵衛・玄斎・鉄之進）から先に控えへ回す
+  if (!G.party.includes(id)) { G.party.push(id); if (G.party.length > PARTY_MAX) { const free = G.party.slice(1, -1).filter(p => FREE_MATES.includes(p)), out = free.length ? free[free.length - 1] : G.party[PARTY_MAX - 1]; G.party = G.party.filter(p => p !== out); benched = out; G.waiting.push(benched); } }
   flag('in_' + id); flag(id); rebuildChain(); meet(id);
   if (!quiet) { SFX.play('join'); await N(`${m.name}が 仲間に加わった！`); }
   if (benched) await N(`${G.mem[benched].name}は 控えに回った。\n（道場・宿・茶屋・陣で、連れて行く仲間を入れ替えられる）`);
@@ -255,6 +267,9 @@ async function leave(id, why) {
   for (const s of ['a', 'h', 'x']) if (m.eq[s] && !HEROES[id].start[s]) { addItem(m.eq[s]); delete m.eq[s]; }
   rebuildChain();
   await N(why || `${m.name}が 一行を離れた。`);
+  // 空いた席には、控えの仲間が戻ってくる
+  const back = (G.waiting || []).find(p => FREE_MATES.includes(p)) || (G.waiting || [])[0];
+  if (back && G.party.length < PARTY_MAX) { G.waiting = G.waiting.filter(p => p !== back); G.party.push(back); rebuildChain(); await N(`${G.mem[back].name}が 控えから 一行に戻った。`); }
 }
 function addItem(id, n = 1) { G.inv[id] = (G.inv[id] || 0) + n; if (G.inv[id] <= 0) delete G.inv[id]; }
 async function give(id, n = 1) { addItem(id, n); SFX.play('item'); await N(`${ITEMS[id].name}${n > 1 ? '×' + n : ''}を 手に入れた！`); }
@@ -288,13 +303,20 @@ function dirOf(dx, dy) { return dy > 0 ? 0 : dx < 0 ? 1 : dx > 0 ? 2 : 3; }
 function tileAt(x, y) { const m = G.map; if (x < 0 || y < 0 || x >= m.w || y >= m.h) return 'x'; return m.g[y][x]; }
 function npcs() { return G.map.npcs.filter(n => !n.cond || n.cond()); }
 function npcAt(x, y) { return npcs().find(n => n.x === x && n.y === y); }
-function passable(x, y) { const t = tileAt(x, y); if (SOLID.has(t)) return false; if (t === 'D' && !houseAt(x, y)) return false; return !npcAt(x, y); }
+function passable(x, y) { const t = tileAt(x, y); if (SOLID.has(t)) return false; if (G.map.block && G.map.block.has(x + ',' + y)) return false; if (t === 'D' && !houseAt(x, y)) return false; return !npcAt(x, y); }
 function houseAt(x, y) { return (G.map.houses || []).find(h => h.x === x && h.y === y); }
 function buildMap(id) {
   const def = MAPS[id] || ROOMS[id];
   _BLD = []; const m = def.build(); m.h = m.g.length; m.w = m.g[0].length; m.id = id;
   setupBuildings(m); setupEdges(m); m.props = m.props || [];
-  m.npcs = (m.npcs || []).map(n => ({ ...n, dir0: n.dir || 0, dir: n.dir || 0 })); m.warps = m.warps || []; m.triggers = m.triggers || [];
+  m.block = new Set(); for (const p of m.props) if (p.img === 'torii') { m.block.add(p.x + ',' + (p.y + 2)); m.block.add((p.x + 2) + ',' + (p.y + 2)); }
+  m.warps = m.warps || []; m.triggers = m.triggers || [];
+  // ボス戦の入口：ボスの姿をマップに立たせ、話しかけるか近づくと「ボス戦です」と確かめてから始める
+  for (const t of m.triggers) if (t.boss) {
+    const spr = typeof t.boss === 'function' ? t.boss() : t.boss;
+    (m.npcs = m.npcs || []).push({ x: t.bx ?? t.x + ((t.w || 1) >> 1), y: t.by ?? t.y, spr, cond: t.cond, mark: true, bossOf: t, talk: () => bossGate(t), dir: t.bdir ?? 0 });
+  }
+  m.npcs = (m.npcs || []).map(n => ({ ...n, dir0: n.dir || 0, dir: n.dir || 0 }));
   m.mini = null; return m;
 }
 // 建物の見た目（名前から種類と看板を決める）と、建物の下に敷く地面
@@ -340,6 +362,12 @@ async function warp(w) {
   SFX.play('door'); await fadeOut(300); enterMap(w.to, w.x2, w.y2, w.dir ?? G.dir); await fadeIn(300);
   if (G.map.onEnter) await G.map.onEnter();
 }
+async function bossGate(t, stepped) {
+  SFX.play('warn'); emote('player', '！');
+  const ok = await ask(null, t.warn || 'この先に 強敵が待ちかまえている。\n【ボス戦】準備はいいですか？');
+  if (!ok) { if (stepped) await walk([3 - G.dir]); return; }
+  await t.run();
+}
 async function warpTo(id, x, y, dir) { await fadeOut(); enterMap(id, x, y, dir); await fadeIn(); }
 async function run(fn) {
   if (G.busy) return; G.busy = true;
@@ -354,7 +382,7 @@ function onStep() {
   const w = m.warps.find(w => w.x === G.px && w.y === G.py && (!w.cond || w.cond()));
   if (w) { run(() => warp(w)); return; }
   const tr = m.triggers.find(t => G.px >= t.x && G.px < t.x + (t.w || 1) && G.py >= t.y && G.py < t.y + (t.h || 1) && (!t.cond || t.cond()));
-  if (tr) { run(tr.run); return; }
+  if (tr) { run(tr.boss ? () => bossGate(tr, true) : tr.run); return; }
   const tbl = m.enc && m.enc();
   if (tbl && (m.encTiles || ['.']).includes(tileAt(G.px, G.py))) {
     G.encSteps++;
@@ -362,7 +390,7 @@ function onStep() {
       G.encSteps = 0;
       let g = pick(tbl);
       for (const rr of (m.rare || [])) if (Math.random() < rr.p) g = rr.g;
-      run(() => battle(g, { bg: m.bbg || 'field' }));
+      run(() => battle(g, { bg: m.bbg || 'field', L: m.encL ? m.encL() : 0 }));
     }
   }
 }
@@ -473,7 +501,7 @@ function drawMap() {
   for (let y = Math.floor(cy / TS); y <= Math.floor((cy + CH) / TS) + 1; y++) for (let x = Math.floor(cx / TS); x <= Math.floor((cx + CW) / TS); x++) {
     if (x < 0 || y < 0 || x >= m.w || y >= m.h) continue;
     let ch = (m.bmask && m.bmask[y * m.w + x]) || m.g[y][x];
-    if (ch === 'T' || ch === 'P') { trees.push([x, y, ch]); ch = ch === 'T' ? '.' : 's'; }
+    if (ch === 'T' || ch === 'P' || ch === 'q') { trees.push([x, y, ch === 'q' ? 'T' : ch]); ch = ch === 'P' ? 's' : '.'; }
     ctx.drawImage(tileImg(ch, ANIM.has(ch) ? (ch === '~' || ch === 'o' ? af : af & 1) : 0, m.vmap[y * m.w + x]), x * TS - cx, y * TS - cy);
     if (ch === 'f') fires.push([x * TS - cx, y * TS - cy]);
     if (ch === 'f' && Math.random() < .35) G.parts.push({ kind: 'fire', x: x * TS + 4 + Math.random() * 24, y: y * TS + 26, vx: (Math.random() - .5) * .3, vy: -.6 - Math.random() * .8, life: 30 + Math.random() * 25, t: 0 });
@@ -488,16 +516,29 @@ function drawMap() {
   }
   for (const [tx, ty, tc] of trees) list.push({ x: tx * TS - 4, y: ty * TS - 28, img: treeImg(tc, (tx * 5 + ty * 3) % 6), sy: ty * TS - .2, raw: 1 });
   for (const p of m.props) {
-    const im = p.img === 'sakurajima' ? sakurajimaImg() : null; if (!im) continue;
-    list.push({ x: p.x * TS, y: p.y * TS, img: im, sy: p.y * TS + im.height - 40, raw: 1 });
+    const im = p.img === 'sakurajima' ? sakurajimaImg() : p.img === 'torii' ? toriiImg() : p.img === 'kaimon' ? kaimonImg() : p.img === 'onsen' ? onsenImg(p.w, p.h) : p.icon ? iconImg(p.icon) : null; if (!im) continue;
+    if (p.img === 'onsen') { list.push({ x: p.x * TS - 14, y: p.y * TS - 16, img: im, sy: (p.y + p.h) * TS - 8, raw: 1 }); continue; }
+    if (p.icon) { list.push({ x: p.x * TS - 8, y: p.y * TS - 16, img: im, sy: p.y * TS + 31, raw: 1 }); continue; }
+    list.push({ x: p.x * TS, y: p.y * TS, img: im, sy: p.y * TS + im.height - (p.img === 'torii' ? 8 : 40), raw: 1 });
     if (p.smoke && Math.random() < .1) G.parts.push({ kind: 'vsmoke', x: p.x * TS + p.smoke[0] + Math.random() * 4, y: p.y * TS + p.smoke[1], vx: .2 + Math.random() * .2, vy: -.3 - Math.random() * .15, life: 220, t: 0 });
   }
   for (const b of m.blds || []) { if (b.skip || (b.x + b.w) * TS < cx - 16 || b.x * TS > cx + CW + 16 || (b.y + 3) * TS < cy || (b.y - 1) * TS > cy + CH) continue; const im = bldImg(b); list.push({ x: b.x * TS + im.ox, y: b.y * TS + im.oy, img: im.c, sy: (b.y + 2) * TS - .5, raw: 1 }); }
-  G.chain.forEach((f, i) => list.push({ x: (f.ox + (f.x - f.ox) * t) * TS, y: (f.oy + (f.y - f.oy) * t) * TS - .1, img: charImg(G.party[i + 1], f.dir, G.move ? wf : 0) }));
+  // 馬に乗っているときは、後ろの仲間も馬に乗ってついてくる（犬のツンは横を走る）
+  G.chain.forEach((f, i) => {
+    const id = G.party[i + 1], fx = (f.ox + (f.x - f.ox) * t) * TS, fy = (f.oy + (f.y - f.oy) * t) * TS, rides = G.ride && !HEROES[id].dog;
+    if (rides) list.push({ x: fx - 8, y: fy - .12, img: horseImg(f.dir, G.move ? ((G.frame >> 2) + i) & 1 : 0), horse: 1 });
+    list.push({ x: fx, y: fy - .1 + (rides ? -14 : 0), img: charImg(id, f.dir, rides ? 0 : G.move ? wf : 0), sy: rides ? fy - .08 : null, crop: rides ? 40 : 0 });
+  });
   if (G.ride) list.push({ x: ppx - 8, y: ppy - .05, img: horseImg(G.dir, G.move ? (G.frame >> 2) & 1 : 0), w: 48, h: 64, horse: 1 });
-  list.push({ x: ppx, y: ppy + (G.ride ? -14 : 0), img: charImg(G.party[0], G.dir, G.ride ? 0 : wf), sy: G.ride ? ppy : null });
+  list.push({ x: ppx, y: ppy + (G.ride ? -14 : 0), img: charImg(G.party[0], G.dir, G.ride ? 0 : wf), sy: G.ride ? ppy : null, crop: G.ride ? 40 : 0 });
   list.sort((a, b) => (a.sy ?? a.y) - (b.sy ?? b.y));
-  for (const s of list) ctx.drawImage(s.img, Math.round((s.x - cx) / 2) * 2, Math.round((s.y - cy - (s.raw ? 0 : s.horse ? 32 : 24)) / 2) * 2);
+  // 馬に乗った人は腰から上だけ描き、馬の背にまたがって見えるようにする（crop＝上から何pxまで描くか）
+  for (const s of list) { const dx = Math.round((s.x - cx) / 2) * 2, dy = Math.round((s.y - cy - (s.raw ? 0 : s.horse ? 32 : 24)) / 2) * 2; if (s.crop) ctx.drawImage(s.img, 0, 0, s.img.width, s.crop, dx, dy, s.img.width, s.crop); else ctx.drawImage(s.img, dx, dy); }
+  for (const p of m.props) if (p.label) {
+    const lx = p.x * TS + 16 - cx, ly = p.y * TS + 44 - cy; if (lx < -60 || lx > CW + 60 || ly < -20 || ly > CH + 20) continue;
+    ctx.font = '13px DotGothic16, sans-serif'; ctx.textAlign = 'center'; const w = ctx.measureText(p.label).width + 10;
+    ctx.fillStyle = 'rgba(10,14,36,.78)'; ctx.fillRect(Math.round(lx - w / 2), ly - 11, Math.round(w), 16); ctx.fillStyle = '#ffe2a0'; ctx.fillText(p.label, lx, ly + 2);
+  }
   if (fires.length) {
     ctx.save(); ctx.globalCompositeOperation = 'lighter';
     for (const [fx0, fy0] of fires) { const g = ctx.createRadialGradient(fx0 + 16, fy0 + 16, 4, fx0 + 16, fy0 + 16, 60); g.addColorStop(0, `rgba(255,140,40,${.28 + Math.random() * .08})`); g.addColorStop(1, 'rgba(255,60,0,0)'); ctx.fillStyle = g; ctx.fillRect(fx0 - 44, fy0 - 44, 120, 120); }
@@ -531,6 +572,7 @@ function drawParticles(cx, cy) {
   for (const p of G.parts) {
     p.t += k; p.x += p.vx; p.y += p.vy;
     if (p.kind === 'fly') { p.x += Math.sin(p.t / 20) * .5; p.y += Math.cos(p.t / 25) * .4; }
+    if (p.kind === 'vsmoke') p.x += Math.sin(p.t / 18 + p.y / 30) * .35;
     const x = p.x - cx, y = p.y - cy, a = 1 - p.t / p.life;
     switch (p.kind) {
       case 'fire': ctx.fillStyle = a > .6 ? '#fff0a0' : a > .3 ? '#ff9a30' : '#d0401a'; ctx.fillRect(x, y, a > .5 ? 3 : 2, a > .5 ? 3 : 2); break;
@@ -575,7 +617,7 @@ function draw() {
   if (G.scene === 'map' && G.map) drawMap();
   else if (G.scene === 'battle' && G.B) drawBattle();
   else if (G.scene === 'kassen' && G.K) drawKassen();
-  else if (G.scene === 'title') { ctx.drawImage(bgImg('title'), 0, 0); drawParticles(0, 0); }
+  else if (G.scene === 'title') { ctx.drawImage(bgImg('title'), 0, 0); drawPlume(ctx, 'title', G.frame); drawParticles(0, 0); }
   tintEl.className = G.scene === 'map' ? (G.weather === 'embers' ? 'fire' : G.weather === 'rain' ? 'rain' : G.night ? 'night' : '') : '';
   drawMini();
 }
@@ -633,20 +675,29 @@ async function settings() {
 }
 
 // ---------- メニュー ----------
+// つよさ・図鑑の顔：主要人物は会話と同じ高画質の顔絵を縮めて使う（ツンも犬の顔になる）
+function faceImg(id) {
+  const c = mk(64, 64), x = c.getContext('2d');
+  if (isMain(id)) { x.imageSmoothingEnabled = true; x.fillStyle = '#1c2340'; x.fillRect(0, 0, 64, 64); x.drawImage(hiPortrait(id), 45, 20, 210, 210, 0, 0, 64, 64); }
+  else { const p = infoOf(id); if (p && p.por) x.drawImage(portraitImg(p.por), 0, 0); }
+  return c;
+}
 function memberLine(m) { return `HP ${m.hp}/${mhp(m)}　気 ${m.ki}/${mki(m)}`; }
 async function openMenu() {
   let last = 0;
   while (true) {
-    const info = panel(`<div class="money">${G.money}<small>文</small></div><div class="ptime">${Math.floor(G.playTime / 3600)}時間${String(Math.floor(G.playTime / 60) % 60).padStart(2, '0')}分</div>`, 8, 196, 96);
-    const i = await choose(['つよさ', 'どうぐ', 'そうび', 'わざ', 'ずかん', 'ならび', 'きろく'], { x: 8, y: 8, w: 96, start: last });
+    const info = panel(`<div class="money">${G.money}<small>文</small></div><div class="ptime">プレイ時間<br>${fmtTime(G.playTime)}</div>`, 8, 196, 96);
+    const items = ['つよさ', 'どうぐ', 'そうび', 'わざ', 'ずかん', 'ならび', 'きろく'].concat(G.ride ? ['馬を降りる'] : []);
+    const i = await choose(items, { x: 8, y: 8, w: 96, start: Math.min(last, items.length - 1) });
     info.remove(); if (i < 0) return; last = i;
+    if (i === 7) { G.ride = false; SFX.play('horse'); await N(G.party.length > 1 ? 'みんな 馬を降りた。' : '馬を降りた。'); return; }
     if (i === 0) await showStatus();
     if (i === 1) await itemMenu();
     if (i === 2) await equipMenu();
     if (i === 3) await skillMenu();
     if (i === 4) await dexMenu();
     if (i === 5) await orderMenu();
-    if (i === 6) await N(save() ? '冒険を 記録しました。' : '記録できませんでした（ブラウザの保存が無効です）。');
+    if (i === 6) await saveMenu();
   }
 }
 async function showStatus() {
@@ -654,8 +705,8 @@ async function showStatus() {
   while (true) {
     const id = G.party[page], m = G.mem[id], eq = ['w', 'a', 'h', 'x'].map(s => `<div>${SLOT_NAMES[s]}：${m.eq[s] ? ITEMS[m.eq[s]].name : '―'}</div>`).join('');
     const heart = id === 'shinpachi' ? `<div class="heart">新八の心　<span class="jo">情 ${'●'.repeat(Math.min(8, pts('jo')))}</span>　<span class="ri">理 ${'●'.repeat(Math.min(8, pts('ri')))}</span>${F('in_senkichi') || pts('bond') ? `　仙吉との絆 ${'♥'.repeat(Math.min(6, pts('bond')))}` : ''}</div>` : '';
-    const p = panel(`<div class="st2"><canvas width="64" height="64"></canvas><div><b class="big">${esc(m.name)}</b>　Lv ${m.lv}<br>${memberLine(m)}<br>攻 ${stat(m, 'atk')}　守 ${stat(m, 'def')}　速 ${stat(m, 'spd')}<br><small>次のLvまで ${expAt(m.lv + 1) - m.exp}</small></div></div><div class="eqs">${eq}</div><div class="sks">わざ：${skillsOf(m).map(s => SKILLS[s].name).join('、') || 'なし'}</div>${heart}<div class="pg">◀ ${page + 1} / ${G.party.length} ▶</div>`, 8, 8, 368, 272);
-    p.querySelector('canvas').getContext('2d').drawImage(portraitImg(infoOf(id).por), 0, 0);
+    const p = panel(`<div class="st2"><canvas width="64" height="64"></canvas><div><b class="big">${esc(m.name)}</b>　Lv ${m.lv}　${elTag(HEROES[id].el)}<br>${memberLine(m)}<br>攻 ${stat(m, 'atk')}　守 ${stat(m, 'def')}　速 ${stat(m, 'spd')}<br><small>次のLvまで ${expAt(m.lv + 1) - m.exp}</small></div></div><div class="eqs">${eq}</div><div class="sks">わざ：${skillsOf(m).map(s => SKILLS[s].name).join('、') || 'なし'}</div>${heart}<div class="pg">◀ ${page + 1} / ${G.party.length} ▶</div>`, 8, 8, 368, 272);
+    p.querySelector('canvas').getContext('2d').drawImage(faceImg(id), 0, 0);
     const k = await new Promise(res => { const h = { tap: true, onKey(k) { if (['left', 'right', 'up', 'down', 'ok', 'cancel'].includes(k)) { UI.pop(h); res(k); } } }; UI.push(h); });
     p.remove();
     if (k === 'cancel' || k === 'ok') return;
@@ -667,6 +718,7 @@ async function orderMenu() {
   const a = await pickMember({ right: () => '先頭にする' }); if (!a) return;
   G.party = [a, ...G.party.filter(x => x !== a)]; rebuildChain(); await N(`${G.mem[a].name}が 先頭になった。`);
 }
+const kiItem = id => !!(ITEMS[id].ki && !ITEMS[id].heal);
 function invList(filter) { return Object.keys(G.inv).filter(id => G.inv[id] > 0 && ITEMS[id] && filter(ITEMS[id])); }
 function descBox() { return place(el('div', 'win desc'), 8, 236, 368, 44); }
 async function pickMember(o = {}) {
@@ -684,7 +736,7 @@ async function itemMenu() {
     d.remove(); if (i < 0) return; last = i;
     const id = ids[i];
     if (ITEMS[id].healAll || ITEMS[id].kiAll) { await useItem(id, G.party[0], false); continue; }
-    const t = await pickMember({ x: 200, y: 40, w: 176 });
+    const t = await pickMember({ x: 200, y: 40, w: 176, right: kiItem(id) ? (m => `気 ${m.ki}/${mki(m)}`) : null });
     if (t) await useItem(id, t, false);
   }
 }
@@ -703,7 +755,9 @@ async function useItem(id, tid, inBattle) {
   if (inBattle) updateBStat();
 }
 async function msg(t) { if (G.B) await bmsg(t); else await N(t); }
-function canEquip(m, it) { return it.type !== 'w' || HEROES[m.id].kinds.includes(it.kind); }
+// 武器は得意な種類だけ。ツン（犬）は着物や笠は着られず、犬用の防具と飾りだけ
+function canEquip(m, it) { const h = HEROES[m.id]; if (it.type === 'w') return h.kinds.includes(it.kind); if (h.dog) return it.type === 'x' || !!it.dog; return !it.dog; }
+function fixEquips() { for (const id in G.mem) { const m = G.mem[id]; for (const s in m.eq) { const it = ITEMS[m.eq[s]]; if (it && !canEquip(m, it)) { addItem(m.eq[s]); delete m.eq[s]; } } } }
 function equipDiff(m, it) { const k = it.type === 'w' ? 'atk' : 'def'; const cur = m.eq[it.type] ? (ITEMS[m.eq[it.type]][k] || 0) : 0; const d = (it[k] || 0) - cur; return `${k === 'atk' ? '攻' : '守'}${d >= 0 ? '+' : ''}${d}`; }
 function doEquip(m, id) { const it = ITEMS[id]; if (m.eq[it.type]) addItem(m.eq[it.type]); m.eq[it.type] = id; addItem(id, -1); m.hp = Math.min(m.hp, mhp(m)); m.ki = Math.min(m.ki, mki(m)); }
 async function equipMenu() {
@@ -735,7 +789,7 @@ async function skillMenu() {
   const m = G.mem[tid], sks = skillsOf(m);
   if (!sks.length) { await N(`${m.name}は まだ わざを覚えていない。`); return; }
   const d = descBox();
-  const i = await choose(sks.map(k => ({ label: SKILLS[k].name, right: '気' + SKILLS[k].ki, disabled: SKILLS[k].type !== 'heal' || m.ki < SKILLS[k].ki })), { x: 116, y: 40, w: 230, onMove: k => d.textContent = SKILLS[sks[k]].desc });
+  const i = await choose(sks.map(k => ({ label: SKILLS[k].name, right: '気' + SKILLS[k].ki, disabled: SKILLS[k].type !== 'heal' || m.ki < SKILLS[k].ki })), { x: 116, y: 8, w: 236, maxH: 222, onMove: k => d.textContent = skillDesc(sks[k]) });
   d.remove(); if (i < 0) return;
   const sk = SKILLS[sks[i]];
   const targets = sk.target === 'allies' ? G.party : [await pickMember({ x: 200, y: 72, w: 176 })];
@@ -758,7 +812,7 @@ async function dexMenu() {
         if (i < 0) break; last = i;
         const id = ids[i], d = DEX.people[id], por = infoOf(id) && infoOf(id).por;
         const p = panel(`<div class="st2"><canvas width="64" height="64"></canvas><div><b class="big">${esc(d.name)}</b><br>${d.years || ''}<br>${esc(d.pref)}${d.fic ? '（架空の人物）' : ''}</div></div><div class="bio">${esc(d.bio)}</div>`, 8, 8, 368, 272);
-        if (por) p.querySelector('canvas').getContext('2d').drawImage(portraitImg(por), 0, 0); else p.querySelector('canvas').remove();
+        if (por || isMain(id)) p.querySelector('canvas').getContext('2d').drawImage(faceImg(id), 0, 0); else p.querySelector('canvas').remove();
         await waitOk(); p.remove();
       }
     }
@@ -842,7 +896,7 @@ async function rentHorse(price = 30) {
   if (G.ride) { await N('もう 馬に乗っている。'); return; }
   if (await ask('umakata', `馬に乗っていきもはんか？\n${price}文で、野山なら どこでん飛ばせもすど。`, `馬に乗っていきませんか？\n${price}文で、野山ならどこへでも飛ばせますよ。`)) {
     if (G.money < price) { await S('umakata', '……銭が足りもはんな。', '……お金が足りませんね。'); return; }
-    G.money -= price; G.ride = true; SFX.play('horse'); await N('馬に乗った！ 野山を速く駆けられる。\n（町や家に入ると 降りる）');
+    G.money -= price; G.ride = true; SFX.play('horse'); await N(G.party.length > 1 ? 'みんなで 馬に乗った！ 野山を速く駆けられる。\n（町や家に入るか、メニューの「馬を降りる」で 降りる）' : '馬に乗った！ 野山を速く駆けられる。\n（町や家に入るか、メニューの「馬を降りる」で 降りる）');
   }
 }
 
@@ -861,7 +915,7 @@ function fxMember(id, type) { const i = G.party.indexOf(id); if (i >= 0 && G.B) 
 function num(x, y, text, col) { if (G.B) G.B.nums.push({ x, y, text, col, t: 0 }); }
 function drawBattle() {
   const B = G.B;
-  ctx.drawImage(bgImg(B.bg), 0, 0);
+  ctx.drawImage(bgImg(B.bg), 0, 0); drawPlume(ctx, B.bg, G.frame);
   if (B.bg === 'storm' || B.bg === 'rain') for (let i = 0; i < 6; i++) { const x = Math.random() * CW, y = Math.random() * CH; ctx.strokeStyle = 'rgba(200,210,230,.5)'; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - 4, y + 16); ctx.stroke(); }
   if (B.bg === 'fire' || B.bg === 'shiroyama') for (let i = 0; i < 3; i++) { ctx.fillStyle = Math.random() < .5 ? '#ff9a30' : '#e04a1a'; ctx.fillRect(Math.random() * CW, 150 + Math.random() * 230, 2, 2); }
   const bob = Math.sin(G.frame / 20) * 1.5;
@@ -870,10 +924,13 @@ function drawBattle() {
     if (e.alpha <= 0) continue;
     if (e.flash > 0) { e.flash--; if ((e.flash >> 1) % 2) continue; }
     ctx.globalAlpha = e.alpha; ctx.drawImage(e.img, e.x + (e.shk > 0 ? (e.shk-- % 2 ? 3 : -3) : 0), e.y + (e.d.spr.t ? 0 : bob), e.w, e.h); ctx.globalAlpha = 1;
-    if (!e.dead && e.st) {
+    if (!e.dead && (e.st || e.up)) { e.st = e.st || {};
       const tags = ['atk', 'def', 'spd'].filter(k => est(e, k)).map(k => ST_MARK[k] + '↓').concat(e.st.bleed && e.st.bleed.t > 0 ? ['血'] : [], e.st.stun ? ['ひるみ'] : []);
+      const ups = ['atk', 'def', 'spd'].filter(k => eup(e, k)).map(k => ST_MARK[k] + '↑');
+      if (ups.length) { ctx.font = '12px DotGothic16, sans-serif'; ctx.textAlign = 'center'; const tx = ups.join(' '), w = ctx.measureText(tx).width + 8; ctx.fillStyle = 'rgba(10,14,36,.8)'; ctx.fillRect(e.x + e.w / 2 - w / 2, e.y - 20, w, 15); ctx.fillStyle = '#ffd040'; ctx.fillText(tx, e.x + e.w / 2, e.y - 9); }
       if (tags.length) { ctx.font = '12px DotGothic16, sans-serif'; ctx.textAlign = 'center'; const tx = tags.join(' '), w = ctx.measureText(tx).width + 8; ctx.fillStyle = 'rgba(10,14,36,.8)'; ctx.fillRect(e.x + e.w / 2 - w / 2, e.y - 4, w, 15); ctx.fillStyle = '#ff9a8a'; ctx.fillText(tx, e.x + e.w / 2, e.y + 7); }
     }
+    if (!e.dead && e.d.el) { ctx.font = '12px DotGothic16, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(10,14,36,.75)'; ctx.fillRect(e.x + e.w / 2 - 14, e.y + e.h + 1, 28, 14); ctx.fillStyle = EL_COL[e.d.el]; ctx.fillText(e.d.el, e.x + e.w / 2, e.y + e.h + 12); }
     if (e.rare && G.frame % 20 < 3) { ctx.fillStyle = '#fff'; ctx.fillRect(e.x + Math.random() * e.w, e.y + Math.random() * e.h, 2, 2); }
   }
   if (B.sel != null && B.es[B.sel] && !B.es[B.sel].dead && (G.frame >> 3) % 2) {
@@ -910,7 +967,7 @@ function updateBStat() {
     const m = G.mem[id], e = B.statEls[i]; if (!e) return;
     e.classList.toggle('dead', m.hp <= 0); e.classList.toggle('act', B.actIdx === i); e.classList.toggle('low', m.hp > 0 && m.hp < mhp(m) / 4);
     const hp = Math.max(0, m.hp / mhp(m)), ki = Math.max(0, m.ki / Math.max(1, mki(m)));
-    const chips = ['atk', 'def', 'spd'].filter(k => pst(id, k)).map(k => `<i class="up">${ST_MARK[k]}↑</i>`).join('') + (B.pb[id] && B.pb[id].regen && B.pb[id].regen.t > 0 ? '<i class="rg">癒</i>' : '');
+    const pb = B.pb[id], chips = ['atk', 'def', 'spd'].filter(k => pst(id, k)).map(k => pst(id, k) > 0 ? `<i class="up">${ST_MARK[k]}↑</i>` : `<i class="dn">${ST_MARK[k]}↓</i>`).join('') + (pb && pb.regen && pb.regen.t > 0 ? '<i class="rg">癒</i>' : '') + (pb && pb.bleed && pb.bleed.t > 0 ? '<i class="dn">血</i>' : '');
     e.innerHTML = `<div class="bn">${esc(m.name)}${chips ? `<em class="chips">${chips}</em>` : ''}<span>Lv${m.lv}</span></div><div>HP <b>${m.hp}</b><small>/${mhp(m)}</small></div><div class="bar"><i style="width:${hp * 100}%"></i></div><div>気 <b>${m.ki}</b><small>/${mki(m)}</small></div><div class="bar ki"><i style="width:${ki * 100}%"></i></div>`;
   });
 }
@@ -924,7 +981,8 @@ async function battle(group, opt = {}) {
   const seen = {};
   const B = {
     es: group.map(id => {
-      const d = ENEMIES[id]; let name = d.name;
+      // 野山の敵は、出てくる時期（opt.L）に合わせて強くなる。頭（ボス）は手下より少し上
+      const d0 = ENEMIES[id], d = opt.L && d0.scaled ? mkEnemy(id, { ...EN[id], L: Math.max(EN[id].L, opt.L + (EN[id].L - 3) * .4) }) : d0; let name = d.name;
       if (counts[id] > 1) { seen[id] = (seen[id] || 0) + 1; name += 'ABCD'[seen[id] - 1]; }
       return { id, d, name, hp: d.hp, atk: d.atk, def: d.def, spd: d.spd, img: enemyImg(id), flash: 0, alpha: 1, dead: false, buff: 0, rare: d.rare, shk: 0 };
     }), turn: 1, opt, bg: opt.bg || 'field', defend: {}, pb: {}, sel: null, actIdx: -1, fx: [], nums: [],
@@ -977,7 +1035,7 @@ async function inputCommands(B) {
     if (c === 1) {
       const sks = skillsOf(m);
       if (!sks.length) { B.msgEl.textContent = 'まだ わざを覚えていない。'; await waitOk(900); continue; }
-      const k = await choose(sks.map(s => ({ label: SKILLS[s].name, right: '気' + SKILLS[s].ki, disabled: m.ki < SKILLS[s].ki })), { x: 112, y: 130, w: 220, maxH: 140, onMove: j => B.msgEl.textContent = SKILLS[sks[j]].desc });
+      const k = await choose(sks.map(s => ({ label: SKILLS[s].name, right: '気' + SKILLS[s].ki, disabled: m.ki < SKILLS[s].ki })), { x: 112, y: 52, w: 236, maxH: 138, onMove: j => B.msgEl.textContent = skillDesc(sks[j]) });
       if (k < 0) continue;
       const sk = SKILLS[sks[k]]; let t = null;
       if (sk.target === 'enemy') { t = await pickEnemy(B); if (t < 0) continue; }
@@ -991,7 +1049,7 @@ async function inputCommands(B) {
       if (k < 0) continue;
       const it = ITEMS[ids[k]];
       if (it.target === 'enemy') { const t = await pickEnemy(B); if (t < 0) continue; act = { type: 'throw', item: ids[k], actor: id, t }; }
-      else { const t = (it.healAll || it.kiAll) ? id : await pickMember({ x: 112, y: 100, w: 220 }); if (!t) continue; act = { type: 'item', item: ids[k], actor: id, t }; }
+      else { const t = (it.healAll || it.kiAll) ? id : await pickMember({ x: 112, y: 100, w: 220, right: kiItem(ids[k]) ? (m => `気 ${m.ki}/${mki(m)}`) : null }); if (!t) continue; act = { type: 'item', item: ids[k], actor: id, t }; }
     }
     if (c === 3) act = { type: 'def', actor: id };
     if (c === 4) { B.actIdx = -1; return 'run'; }
@@ -1003,7 +1061,7 @@ async function inputCommands(B) {
 async function pickEnemy(B) {
   const alive = B.es.map((e, i) => i).filter(i => !B.es[i].dead);
   if (alive.length === 1) return alive[0];
-  const k = await choose(alive.map(i => B.es[i].name), { x: 112, y: 120, w: 220, onMove: j => B.sel = alive[j] });
+  const k = await choose(alive.map(i => ({ label: B.es[i].name, right: B.es[i].d.el ? '【' + B.es[i].d.el + '】' : '' })), { x: 112, y: 100, w: 236, onMove: j => B.sel = alive[j] });
   B.sel = null; return k < 0 ? -1 : alive[k];
 }
 const aliveMembers = () => G.party.map(id => G.mem[id]).filter(m => m.hp > 0);
@@ -1023,14 +1081,33 @@ async function execTurn(B, acts) {
   B.turn++;
   return null;
 }
+// ---- 五行（木・火・土・金・水）。相手に剋つ属性で攻めると1.5倍、剋たれる属性だと0.8倍 ----
+// 木は土に、土は水に、水は火に、火は金に、金は木に剋つ
+const KOKU = { 木: '土', 土: '水', 水: '火', 火: '金', 金: '木' };
+const EL_COL = { 木: '#7ad86a', 火: '#ff7a4a', 土: '#e0b860', 金: '#e8e8f4', 水: '#6ab8ff' };
+const FX_EL = { slash: '金', chest: '金', shot: '火', boom: '火', bite: '木', hit: '土' };
+function elTag(e) { return e ? `<span class="el" style="color:${EL_COL[e]}">【${e}】</span>` : ''; }
+function elRate(a, d) { return !a || !d ? 1 : KOKU[a] === d ? 1.5 : KOKU[d] === a ? .8 : 1; }
+function skillEl(sk) { return sk.el || (sk.type === 'atk' ? FX_EL[sk.fx || (sk.first ? 'chest' : 'slash')] : null); }
+function skillDesc(id) { const sk = SKILLS[id], e = skillEl(sk); return (e ? `【${e}】` : '') + sk.desc; }
 function retarget(B, t) { const e = B.es[t]; if (e && !e.dead) return e; return B.es.find(x => !x.dead); }
+function weaponEl(m) { return FX_EL[weaponFx(m)]; }
 function weaponFx(m) { const w = m.eq.w && ITEMS[m.eq.w]; return w && (w.kind === 'gun' || w.kind === 'pistol') ? 'shot' : w && w.kind === 'fang' ? 'bite' : 'slash'; }
 // ---- 強化・弱体（戦闘中だけ。v＝割合、t＝残りターン） ----
 const ST_NAME = { atk: '攻撃力', def: '守り', spd: '素早さ' }, ST_MARK = { atk: '攻', def: '守', spd: '速' };
 function pst(id, k) { const B = G.B, s = B && B.pb[id] && B.pb[id][k]; return s && s.t > 0 ? s.v : 0; }
 function bstat(m, k) { return Math.round(stat(m, k) * (1 + pst(m.id, k))); }
 function est(e, k) { const s = e.st && e.st[k]; return s && s.t > 0 ? s.v : 0; }
-const eAtk = e => e.atk * (1 + .25 * e.buff) * (1 - est(e, 'atk')), eDef = e => e.def * (1 - est(e, 'def')), eSpd = e => e.spd * (1 - est(e, 'spd'));
+function eup(e, k) { const s = e.up && e.up[k]; return s && s.t > 0 ? s.v : 0; }
+const eAtk = e => e.atk * (1 + .25 * e.buff + eup(e, 'atk')) * (1 - est(e, 'atk')), eDef = e => e.def * (1 + eup(e, 'def')) * (1 - est(e, 'def')), eSpd = e => e.spd * (1 + eup(e, 'spd')) * (1 - est(e, 'spd'));
+// 敵のわざで、こちらの能力が下がる（強化のわざを使えば打ち消せる）
+async function debuffMembers(B, ms, stats, v, turns) {
+  const hit = ms.filter(m => m.hp > 0 && Math.random() < .85);
+  if (!hit.length) { await bmsg('しかし 効かなかった！', 500); return; }
+  for (const m of hit) { const pb = B.pb[m.id] = B.pb[m.id] || {}; for (const k of stats) pb[k] = { v: Math.min(-v, pst(m.id, k)), t: turns + 1 }; fxMember(m.id, 'hit'); }
+  SFX.play('debuff'); updateBStat();
+  await bmsg(`${hit.length > 1 ? 'みんな' : hit[0].name}の ${stats.map(k => ST_NAME[k]).join('と')}が 下がった！`, 700);
+}
 async function buffMembers(B, ms, stats, v, turns) {
   for (const m of ms) { const pb = B.pb[m.id] = B.pb[m.id] || {}; for (const k of stats) pb[k] = { v: Math.max(v, pst(m.id, k)), t: turns + 1 }; fxMember(m.id, 'buff'); }
   SFX.play('buff'); updateBStat();
@@ -1039,7 +1116,7 @@ async function buffMembers(B, ms, stats, v, turns) {
 async function debuffEnemy(B, e, stats, v, turns, rate = 1) {
   if (e.dead) return;
   if (Math.random() > rate * (B.opt.boss ? .75 : 1)) { await bmsg(`${e.name}には 効かなかった！`, 500); return; }
-  e.st = e.st || {}; for (const k of stats) e.st[k] = { v: Math.max(v, est(e, k)), t: turns + 1 };
+  e.st = e.st || {}; for (const k of stats) { e.st[k] = { v: Math.max(v, est(e, k)), t: turns + 1 }; if (e.up && e.up[k]) e.up[k].t = 0; }
   fxEnemy(e, 'hit'); SFX.play('hurt'); await bmsg(`${e.name}の ${stats.map(k => ST_NAME[k]).join('と')}が 下がった！`, 650);
 }
 async function stunEnemy(B, e, rate) {
@@ -1057,29 +1134,33 @@ async function tickStatus(B) {
     }
     for (const k of ['atk', 'def', 'spd', 'bleed']) if (e.st[k] && e.st[k].t > 0) e.st[k].t--;
   }
+  for (const e of B.es) if (e.up) for (const k in e.up) if (e.up[k].t > 0) e.up[k].t--;
   for (const id of G.party) {
     const m = G.mem[id], pb = B.pb[id]; if (!pb) continue;
+    if (pb.bleed && pb.bleed.t > 0 && m.hp > 0) { const d = Math.min(m.hp, pb.bleed.v); m.hp -= d; fxMember(id, 'hit'); hurtFlash(id); updateBStat(); await bmsg(`${m.name}は 傷が痛み ${d} の ダメージ！`, 450); if (m.hp <= 0) await bmsg(`${m.name}は 倒れた……`); }
     if (pb.regen && pb.regen.t > 0 && m.hp > 0) { const v = Math.min(mhp(m) - m.hp, pb.regen.v); if (v > 0) { m.hp += v; fxMember(id, 'heal'); updateBStat(); await bmsg(`${m.name}の HPが ${v} 回復した。`, 450); } }
     for (const k in pb) if (pb[k].t > 0) pb[k].t--;
   }
   updateBStat();
 }
-async function hitEnemy(B, e, atk, pow, sure, fxType = 'slash') {
+async function hitEnemy(B, e, atk, pow, sure, fxType = 'slash', el = null) {
   if (!sure && Math.random() < (e.d.evade || .05)) { SFX.play('miss'); await bmsg('しかし 攻撃は かわされた！'); return; }
-  let dmg = calcDmg(atk, eDef(e), pow);
+  const rate = elRate(el, e.d.el);
+  let dmg = Math.max(1, Math.round(calcDmg(atk, eDef(e), pow) * rate));
   const crit = Math.random() < 1 / 18;
-  if (crit) { dmg = Math.round(atk * pow * 1.6); }
+  if (crit) { dmg = Math.round(atk * pow * 1.6 * rate); }
   if (e.d.armor) dmg = Math.max(1, Math.min(dmg, e.d.armor + (Math.random() < .5 ? 1 : 0)));
   fxEnemy(e, crit && fxType === 'slash' ? 'chest' : fxType); SFX.play(fxType === 'shot' ? 'gun' : fxType === 'boom' ? 'boom' : crit ? 'chest' : 'slash');
   await sleep(T(160));
   e.hp -= dmg; e.flash = 14; e.shk = 8; num(e.x + e.w / 2, e.y + e.h / 3, dmg, crit ? '#ffd040' : '#fff');
   if (crit) { flashScreen('#fff'); await bmsg('見事な一撃！', 450); }
-  await bmsg(`${e.name}に ${dmg} の ダメージ！`, 650);
+  await bmsg(`${e.name}に ${dmg} の ダメージ！` + (rate > 1 ? `\n【${el}は${e.d.el}に剋つ】五行の相性で 大きな痛手を与えた！` : rate < 1 ? `\n【${e.d.el}は${el}に剋つ】五行の相性が悪い……` : ''), rate === 1 ? 650 : 900);
   if (e.hp <= 0) { e.hp = 0; e.dead = true; SFX.play('kill'); await bmsg(e.d.defeat ? e.d.defeat.replace('{n}', e.name) : `${e.name}を 倒した！`); }
 }
-async function hitMember(B, m, atk, pow, fxType = 'hit') {
+async function hitMember(B, m, atk, pow, fxType = 'hit', el = null) {
   if (Math.random() < Math.min(.25, bstat(m, 'spd') / 600)) { SFX.play('miss'); await bmsg(`${m.name}は ひらりと かわした！`, 600); return; }
-  let dmg = calcDmg(atk, bstat(m, 'def'), pow);
+  const r0 = elRate(el, HEROES[m.id].el), rate = r0 > 1 ? 1.2 : r0 < 1 ? .85 : 1;
+  let dmg = Math.max(1, Math.round(calcDmg(atk, bstat(m, 'def'), pow) * rate));
   if (B.defend[m.id]) dmg = Math.max(1, Math.round(dmg / 2));
   m.hp = Math.max(0, m.hp - dmg); fxMember(m.id, fxType); SFX.play(fxType === 'shot' ? 'gun' : fxType === 'boom' ? 'boom' : 'hurt'); shake(fxType === 'boom'); hurtFlash(m.id); updateBStat();
   const p = B_POS(G.party.indexOf(m.id), G.party.length); num(p.x, p.y + 40, dmg, '#ff8a8a');
@@ -1089,9 +1170,9 @@ async function hitMember(B, m, atk, pow, fxType = 'hit') {
 async function pAct(B, a) {
   const m = G.mem[a.actor];
   if (a.type === 'def') { fxMember(a.actor, 'buff'); await bmsg(`${m.name}は 身を守っている。`, 500); return; }
-  if (a.type === 'atk') { const e = retarget(B, a.t); if (!e) return; await bmsg(`${m.name}の 攻撃！`, 350); await hitEnemy(B, e, bstat(m, 'atk'), 1, false, weaponFx(m)); return; }
+  if (a.type === 'atk') { const e = retarget(B, a.t); if (!e) return; await bmsg(`${m.name}の 攻撃！`, 350); await hitEnemy(B, e, bstat(m, 'atk'), 1, false, weaponFx(m), weaponEl(m)); return; }
   if (a.type === 'item') { await useItem(a.item, a.t, true); updateBStat(); return; }
-  if (a.type === 'throw') { const it = ITEMS[a.item], e = retarget(B, a.t); if (!e || !G.inv[a.item]) return; addItem(a.item, -1); await bmsg(`${m.name}は ${it.name}を 投げつけた！`, 500); await hitEnemy(B, e, it.dmg, 1, true, 'boom'); return; }
+  if (a.type === 'throw') { const it = ITEMS[a.item], e = retarget(B, a.t); if (!e || !G.inv[a.item]) return; addItem(a.item, -1); await bmsg(`${m.name}は ${it.name}を 投げつけた！`, 500); await hitEnemy(B, e, it.dmg, 1, true, 'boom', it.el || '火'); return; }
   if (a.type === 'skill') {
     const sk = SKILLS[a.sk];
     if (m.ki < sk.ki) { await bmsg(`${m.name}は ${sk.name}を使おうとした！ しかし 気が足りない！`); return; }
@@ -1101,7 +1182,7 @@ async function pAct(B, a) {
       let pow = sk.pow;
       if (sk.first && B.turn === 1) { pow *= sk.first; flashScreen('#fff'); await bmsg('初太刀！ チェストォォォッ！！', 600); }
       const ts = sk.target === 'enemies' ? B.es.filter(e => !e.dead) : [retarget(B, a.t)].filter(Boolean);
-      for (let hit = 0; hit < (sk.hits || 1); hit++) for (const e of ts) if (!e.dead) await hitEnemy(B, e, bstat(m, 'atk'), pow, sk.sure, sk.fx || (sk.first ? 'chest' : 'slash'));
+      for (let hit = 0; hit < (sk.hits || 1); hit++) for (const e of ts) if (!e.dead) await hitEnemy(B, e, bstat(m, 'atk'), pow, sk.sure, sk.fx || (sk.first ? 'chest' : 'slash'), skillEl(sk));
       if (sk.drain) { const v = Math.round(stat(m, 'atk') * sk.drain); m.hp = Math.min(mhp(m), m.hp + v); updateBStat(); }
       for (const e of ts) {
         if (e.dead) continue;
@@ -1143,13 +1224,25 @@ async function eAct(B, e) {
   const atk = eAtk(e);
   if (e.d.flee && Math.random() < e.d.flee) { SFX.play('run'); e.dead = true; e.fled = true; await bmsg(`${e.name}は 逃げ出した！`); return; }
   const ft = e.d.fx || 'hit';
-  if (!sk) { const t = pick(aliveMembers()); await bmsg(`${e.name}の 攻撃！`, 400); await hitMember(B, t, atk, 1, ft); return; }
+  const el = e.d.el;
+  if (!sk) { const t = pick(aliveMembers()); await bmsg(`${e.name}の 攻撃！`, 400); await hitMember(B, t, atk, 1, ft, el); return; }
   await bmsg(sk.msg.replace('{n}', e.name), 700);
   const sft = sk.fx || ft;
-  if (sk.type === 'one') await hitMember(B, pick(aliveMembers()), atk, sk.pow, sft);
+  if (sk.type === 'one') await hitMember(B, pick(aliveMembers()), atk, sk.pow, sft, el);
   else if (sk.type === 'all' || sk.type === 'explode') {
     if (sk.type === 'explode') { e.dead = true; e.hp = 0; SFX.play('boom'); fxEnemy(e, 'boom'); }
-    for (const m of aliveMembers()) await hitMember(B, m, atk, sk.pow, sft);
+    for (const m of aliveMembers()) await hitMember(B, m, atk, sk.pow, sft, el);
+  }
+  else if (sk.type === 'ebuff') {
+    const ts = sk.all ? B.es.filter(x => !x.dead) : [e];
+    for (const x of ts) { x.up = x.up || {}; for (const k of sk.stat) x.up[k] = { v: sk.v || .3, t: (sk.turns || 3) + 1 }; fxEnemy(x, 'buff'); }
+    SFX.play('buff'); await bmsg(`${sk.all && ts.length > 1 ? '敵みんな' : e.name}の ${sk.stat.map(k => ST_NAME[k]).join('と')}が 上がった！`, 700);
+  }
+  else if (sk.type === 'pdebuff') { const al = aliveMembers(); await debuffMembers(B, sk.all ? al : [pick(al)], sk.stat, sk.v || .25, sk.turns || 3); }
+  else if (sk.type === 'pbleed') {
+    const al = aliveMembers(), ts = sk.all ? al : [pick(al)];
+    for (const m of ts) { await hitMember(B, m, atk, sk.pow || .9, sft, el); if (m.hp > 0) { const pb = B.pb[m.id] = B.pb[m.id] || {}; pb.bleed = { v: Math.max(2, Math.round(atk * .22)), t: sk.turns || 3 }; } }
+    updateBStat(); await bmsg('深い傷を負った！（出血）', 500);
   } else if (sk.type === 'buff') { if (e.buff < 2) { e.buff++; fxEnemy(e, 'buff'); SFX.play('buff'); await bmsg(`${e.name}の 攻撃力が 上がった！`); } else await bmsg('しかし 何も起こらなかった。'); }
   else if (sk.type === 'heal') { const v = Math.round(e.d.hp * sk.pow); e.hp = Math.min(e.d.hp, e.hp + v); fxEnemy(e, 'heal'); SFX.play('heal'); await bmsg(`${e.name}は 態勢を立て直した！`); }
   else if (sk.type === 'kidrain') { for (const m of aliveMembers()) m.ki = Math.max(0, m.ki - sk.pow); updateBStat(); SFX.play('hurt'); await bmsg('みんなの気が 削がれた……'); }
@@ -1245,7 +1338,7 @@ async function kassen(def) {
 }
 function drawKassen() {
   const K = G.K, d = K.def;
-  ctx.drawImage(bgImg(d.bg || 'field'), 0, 0);
+  ctx.drawImage(bgImg(d.bg || 'field'), 0, 0); drawPlume(ctx, d.bg || 'field', G.frame);
   const cnt = (s, max) => Math.max(0, Math.ceil(s.troops / s.mt * max));
   const wob = Math.sin(G.frame / 10);
   // 敵（奥）
@@ -1298,28 +1391,57 @@ async function tachiki(rounds = 5) {
 }
 
 // ---------- セーブ・タイトル ----------
-const SAVE_KEY = 'nihonkoku-kagoshima-v2';
-function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify({ party: G.party, waiting: G.waiting || [], mem: G.mem, inv: G.inv, money: G.money, flags: G.flags, chapter: G.chapter, mapId: G.mapId === '_room' ? G.ret.map : G.mapId, px: G.mapId === '_room' ? G.ret.x : G.px, py: G.mapId === '_room' ? G.ret.y : G.py, dir: G.dir, dex: G.dex, ride: false, playTime: G.playTime })); seriesUpdate(); return true; } catch (e) { return false; } }
-function loadData() { try { const s = localStorage.getItem(SAVE_KEY); return s ? JSON.parse(s) : null; } catch (e) { return null; } }
-function applySave(d) { Object.assign(G, { party: d.party, waiting: d.waiting || [], mem: d.mem, inv: d.inv, money: d.money, flags: d.flags, chapter: d.chapter, dex: d.dex || { p: {}, e: {}, l: {}, end: {} }, ride: false, playTime: d.playTime || 0 }); enterMap(d.mapId, d.px, d.py, d.dir); }
+// 記録は3つまで。記録1は、以前の版の記録（ひとつだけの記録）を引き継ぐ
+const SAVE_KEY = 'nihonkoku-kagoshima-v2', SLOTS = 3, slotKey = i => SAVE_KEY + '-s' + i;
+function saveData() { const inRoom = G.mapId === '_room'; return { party: G.party, waiting: G.waiting || [], mem: G.mem, inv: G.inv, money: G.money, flags: G.flags, chapter: G.chapter, mapId: inRoom ? G.ret.map : G.mapId, px: inRoom ? G.ret.x : G.px, py: inRoom ? G.ret.y : G.py, dir: G.dir, dex: G.dex, ride: false, playTime: G.playTime, place: G.map ? G.map.name : '', t: Date.now() }; }
+function save(slot = G.slot || 1) { try { G.slot = slot; localStorage.setItem(slotKey(slot), JSON.stringify(saveData())); seriesUpdate(); return true; } catch (e) { return false; } }
+function loadData(slot = G.slot || 1) {
+  try { let s = localStorage.getItem(slotKey(slot)); if (!s && slot === 1) s = localStorage.getItem(SAVE_KEY); return s ? JSON.parse(s) : null; } catch (e) { return null; }
+}
+const fmtTime = sec => `${Math.floor(sec / 3600)}時間${String(Math.floor(sec / 60) % 60).padStart(2, '0')}分`;
+function slotLabel(i) {
+  const d = loadData(i); if (!d) return { label: `記録${i}　―― 空き ――`, empty: true };
+  const lv = d.mem && d.mem.shinpachi ? d.mem.shinpachi.lv : 1;
+  return { label: `記録${i}　${CH_NAME[d.chapter] || ''}　${d.place || ''}`, right: `Lv${lv}　${fmtTime(d.playTime || 0)}` };
+}
+async function pickSlot(title, forLoad) {
+  const items = [1, 2, 3].map(i => { const l = slotLabel(i); return { label: l.label, right: l.right || '', disabled: forLoad && l.empty }; });
+  const i = await choose(items, { x: 16, y: 60, w: 352, title, start: Math.max(0, (G.slot || 1) - 1) });
+  return i < 0 ? 0 : i + 1;
+}
+async function saveMenu() {
+  const n = await pickSlot('どこに記録しますか？'); if (!n) return;
+  if (n !== G.slot && loadData(n) && !await ask(null, `記録${n}には 別の冒険が残っています。\n上書きしますか？`)) return;
+  await N(save(n) ? `記録${n}に 冒険を記録しました。\n（プレイ時間 ${fmtTime(G.playTime)}）` : '記録できませんでした（ブラウザの保存が無効です）。');
+}
+function applySave(d) { Object.assign(G, { party: d.party, waiting: d.waiting || [], mem: d.mem, inv: d.inv, money: d.money, flags: d.flags, chapter: d.chapter, dex: d.dex || { p: {}, e: {}, l: {}, end: {} }, ride: false, playTime: d.playTime || 0 }); fixEquips(); enterMap(d.mapId, d.px, d.py, d.dir); }
 function newGame() { G.party = ['shinpachi']; G.waiting = []; G.mem = { shinpachi: mkMember('shinpachi', 1) }; G.inv = { karaimo: 3 }; G.money = 30; G.flags = {}; G.chapter = 0; G.dex = { p: {}, e: {}, l: {}, end: {} }; G.log = []; G.playTime = 0; G.ride = false; enterMap('kajiya', 4, 11, 0); }
 async function gameOver() {
   await fadeOut(); G.scene = 'title'; hideDlg(); bgm('sad');
   await card('力尽きた……', '最後に記録した場所から やり直します');
-  const d = loadData();
+  const d = loadData(G.slot);
   if (d) applySave(d); else newGame();
   restAll(); await fadeIn();
 }
 async function title() {
   G.scene = 'title'; G.map = null; G.weather = 'embers'; bgm('title');
-  const t = el('div', 'title'); t.innerHTML = '<div class="tser">日本國物語</div><div class="tt">薩摩の焔</div><div class="ts">〜二つの星を見た少年〜</div><div class="tv">鹿児島編　v1.0</div>';
-  const has = !!loadData();
+  const t = el('div', 'title'); t.innerHTML = '<div class="tser">日本國物語</div><div class="tt">薩摩の焔</div><div class="ts">〜二つの星を見た少年〜</div><div class="tv">鹿児島編　v1.1</div>';
+  const has = [1, 2, 3].some(i => loadData(i));
   while (true) {
     const i = await choose(['はじめから', { label: 'つづきから', disabled: !has }, '設定', '日本國物語 トップへ'], { x: 112, y: 192, w: 160, cancel: false, start: has ? 1 : 0 });
     if (i === 2) { await settings(); continue; }
     if (i === 3) { location.href = '../'; return; }
+    let slot = 0;
+    if (i === 1) { slot = await pickSlot('どの記録から 始めますか？', true); if (!slot) continue; }
+    else {
+      const free = [1, 2, 3].find(k => !loadData(k));
+      slot = await pickSlot('どの記録に 残しますか？（あとで変えられます）'); if (!slot) continue;
+      if (loadData(slot) && !free) { if (!await ask(null, `記録${slot}は 新しい冒険で上書きされます。\nよろしいですか？`)) continue; }
+      else if (loadData(slot)) { if (!await ask(null, `記録${slot}には 冒険が残っています。\n（記録${free}は空いています）上書きしますか？`)) continue; }
+    }
+    G.slot = slot;
     await fadeOut(); t.remove(); setWeather(null);
-    if (i === 0) { newGame(); run(STORY.opening); } else { applySave(loadData()); await fadeIn(); }
+    if (i === 0) { newGame(); run(STORY.opening); } else { applySave(loadData(slot)); await fadeIn(); }
     return;
   }
 }
@@ -1338,7 +1460,7 @@ function fit() {
 const CH_NAME = ['序章', '第一章', '第二章', '第三章', '第四章', '第五章', '第六章', '第七章', '第八章', '第九章', '第十章', '第十一章', '第十二章', '終章'];
 function updateTopbar() {
   const e = $('#tbInfo'); if (!e) return;
-  e.textContent = G.map && G.scene !== 'title' ? `${CH_NAME[G.chapter] || ''}　${G.mapId === '_room' ? G.map.name : (G.map.name || '')}\n${G.money ?? 0} 文` : '';
+  e.textContent = G.map && G.scene !== 'title' ? `${CH_NAME[G.chapter] || ''}　${G.mapId === '_room' ? G.map.name : (G.map.name || '')}\n${G.money ?? 0} 文　⏱${fmtTime(G.playTime)}` : '';
 }
 setInterval(updateTopbar, 1000);
 addEventListener('orientationchange', () => setTimeout(fit, 300));

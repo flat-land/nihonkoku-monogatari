@@ -7,12 +7,33 @@ const Audio8 = {
     if (this.ac) return;
     const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
     this.ac = new AC();
-    this.master = this.ac.createGain(); this.master.connect(this.ac.destination);
-    this.sfxGain = this.ac.createGain(); this.sfxGain.connect(this.master);
-    this.bgmGain = this.ac.createGain(); this.bgmGain.connect(this.master);
+    // 音に厚みを出す：全体をコンプレッサーでまとめ、残響（リバーブ）とやまびこ（ディレイ）を足す
+    const comp = this.ac.createDynamicsCompressor(); comp.threshold.value = -18; comp.ratio.value = 3; comp.attack.value = .004; comp.release.value = .2; comp.connect(this.ac.destination);
+    this.master = this.ac.createGain(); this.master.connect(comp);
+    this.rev = this.ac.createConvolver(); this.rev.buffer = this.impulse(1.9, 2.6); const revOut = this.ac.createGain(); revOut.gain.value = .55; this.rev.connect(revOut); revOut.connect(this.master);
+    this.delay = this.ac.createDelay(1); this.delay.delayTime.value = .32; const fb = this.ac.createGain(); fb.gain.value = .26; const dOut = this.ac.createGain(); dOut.gain.value = .2; const dLp = this.ac.createBiquadFilter(); dLp.type = 'lowpass'; dLp.frequency.value = 2400;
+    this.delay.connect(dLp); dLp.connect(fb); fb.connect(this.delay); dLp.connect(dOut); dOut.connect(this.master);
+    this.sfxGain = this.ac.createGain(); this.sfxGain.connect(this.master); const sRev = this.ac.createGain(); sRev.gain.value = .22; this.sfxGain.connect(sRev); sRev.connect(this.rev);
+    this.bgmGain = this.ac.createGain(); this.bgmGain.connect(this.master); const bRev = this.ac.createGain(); bRev.gain.value = .45; this.bgmGain.connect(bRev); bRev.connect(this.rev);
+    this.leadBus = this.ac.createGain(); this.leadBus.connect(this.bgmGain); this.leadBus.connect(this.delay);
     this.setVol();
     this.noiseBuf = this.ac.createBuffer(1, this.ac.sampleRate, this.ac.sampleRate);
     const d = this.noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  },
+  impulse(sec, decay) {
+    const c = this.ac, n = Math.floor(c.sampleRate * sec), b = c.createBuffer(2, n, c.sampleRate);
+    for (let ch = 0; ch < 2; ch++) { const d = b.getChannelData(ch); for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, decay); }
+    return b;
+  },
+  // BGMの一音：少しずらした2つの音を重ね（コーラス）、角を丸め、低音にはオクターブ下の音を足す
+  voice(f, dur, wave, vol, when, lead) {
+    const c = this.ac, t = when, out = lead ? this.leadBus : this.bgmGain;
+    const g = c.createGain(), lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = wave === 'triangle' ? 5000 : wave === 'sawtooth' ? 2200 : 3200; lp.Q.value = .7;
+    const rel = Math.min(.12, dur * .4);
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + .008); g.gain.setValueAtTime(vol * .8, t + Math.max(.01, dur - rel)); g.gain.exponentialRampToValueAtTime(.0001, t + dur + rel);
+    lp.connect(g); g.connect(out);
+    for (const dt of wave === 'triangle' ? [0] : [-7, 7]) { const o = c.createOscillator(); o.type = wave; o.frequency.setValueAtTime(f, t); o.detune.value = dt; const og = c.createGain(); og.gain.value = wave === 'triangle' ? 1 : .62; o.connect(og); og.connect(lp); o.start(t); o.stop(t + dur + rel + .05); }
+    if (wave === 'triangle' && f < 220) { const o = c.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(f / 2, t); const og = c.createGain(); og.gain.value = .55; o.connect(og); og.connect(lp); o.start(t); o.stop(t + dur + rel + .05); }
   },
   setVol() { if (!this.ac) return; this.sfxGain.gain.value = this.vol.sfx; this.bgmGain.gain.value = this.vol.bgm * .55; },
   // スマホ（特にiPhone）は、画面に触れた瞬間に音を解錠しないと鳴らない。
@@ -52,11 +73,11 @@ const Audio8 = {
     const T = (...a) => this.tone(...a), Nz = (...a) => this.noise(...a);
     const fx = {
       cur: () => T(1046, .03, 'square', .025), ok: () => { T(784, .05, 'square', .04); T(1175, .06, 'square', .03, .04); }, cancel: () => T(392, .07, 'square', .035), ng: () => T(130, .15, 'square', .05),
-      slash: () => { Nz(.12, .3, 0, 3500, null, .7); T(1400, .08, 'sawtooth', .03, 0, -1100); },
+      slash: () => { Nz(.12, .3, 0, 3500, null, .7); Nz(.08, .2, .01, 900, null, .8); T(1400, .08, 'sawtooth', .03, 0, -1100); T(140, .12, 'sine', .12, .02, -70); },
       chest: () => { Nz(.2, .4, 0, 2500, null, .5); T(160, .25, 'sawtooth', .1, 0, -100); T(1800, .1, 'sawtooth', .04, 0, -1500); },
-      gun: () => { Nz(.16, .5, 0, 900, null, .4); T(90, .12, 'square', .1, 0, -50); },
-      boom: () => { Nz(.7, .6, 0, 300, null, .3); T(70, .6, 'sawtooth', .16, 0, -40); },
-      hurt: () => { T(160, .16, 'sawtooth', .09, 0, -90); Nz(.1, .2, 0, 600); },
+      gun: () => { Nz(.16, .5, 0, 900, null, .4); Nz(.4, .12, .05, 400, null, .5); T(90, .12, 'square', .1, 0, -50); T(60, .25, 'sine', .2, 0, -30); },
+      boom: () => { Nz(.7, .6, 0, 300, null, .3); Nz(1.2, .2, .1, 150, null, .4); T(70, .6, 'sawtooth', .16, 0, -40); T(45, .9, 'sine', .3, 0, -20); },
+      hurt: () => { T(160, .16, 'sawtooth', .09, 0, -90); Nz(.1, .2, 0, 600); T(70, .18, 'sine', .18, 0, -30); },
       kill: () => { T(400, .08, 'square', .06, 0, -300); T(200, .25, 'square', .05, .07, -150); Nz(.3, .15, .05, 500); },
       heal: () => [784, 988, 1175, 1568].forEach((f, i) => T(f, .18, 'triangle', .08, i * .06)),
       buff: () => [523, 659, 784, 1046, 1318].forEach((f, i) => T(f, .12, 'square', .03, i * .04)),
@@ -77,7 +98,9 @@ const Audio8 = {
       bark: () => { T(520, .07, 'sawtooth', .07, 0, -200); T(500, .09, 'sawtooth', .07, .14, -220); },
       win: () => { [659, 784, 1046].forEach((f, i) => T(f, .15, 'square', .05, i * .12)); T(1318, .6, 'square', .05, .36); T(784, .6, 'triangle', .07, .36); T(1046, .6, 'triangle', .05, .36); },
       bell: () => { T(392, 2.5, 'sine', .12); T(784, 2, 'sine', .05); T(1176, 1.5, 'sine', .03); },
-      drum: () => { T(90, .25, 'sine', .25, 0, -40); Nz(.1, .2, 0, 300); },
+      drum: () => { T(90, .25, 'sine', .25, 0, -40); Nz(.1, .2, 0, 300); T(60, .5, 'sine', .2, .25, -20); Nz(.1, .15, .25, 300); },
+      warn: () => { [0, .18].forEach(t => { T(330, .14, 'square', .06, t); T(311, .14, 'square', .05, t + .07); }); T(110, .5, 'sawtooth', .06, .36, -30); },
+      debuff: () => [784, 622, 523, 392].forEach((f, i) => T(f, .12, 'square', .035, i * .05)),
     };
     (fx[n] || (() => { }))();
   },
@@ -88,7 +111,7 @@ const Audio8 = {
     if (!this.ac || this.ac.state !== 'running') { this.want = name; return; }
     clearInterval(this.timer); this.timer = null;
     const tr = BGM_TRACKS[name]; if (!tr) return;
-    this.track = tr; this.step = 0; this.nextT = this.ac.currentTime + .1;
+    this.track = tr; this.step = 0; this.nextT = this.ac.currentTime + .1; if (this.delay) this.delay.delayTime.value = Math.min(.9, 60 / tr.bpm / 2 * 3);
     this.timer = setInterval(() => this.tick(), 50);
   },
   stop() { this.cur = null; this.want = null; clearInterval(this.timer); this.timer = null; },
@@ -100,8 +123,8 @@ const Audio8 = {
         const seq = v.seq, tok = seq[this.step % seq.length];
         if (tok && tok !== '-' && tok !== '.') {
           let len = 1; while (seq[(this.step + len) % seq.length] === '-' && len < 16) len++;
-          if (v.drum) { if (tok === 'k') this.tone(80, .2, 'sine', v.vol * 3, this.nextT, -40, this.bgmGain); else if (tok === 's') this.noise(.12, v.vol * 2, this.nextT, 1800, this.bgmGain); else if (tok === 'h') this.noise(.04, v.vol, this.nextT, 7000, this.bgmGain); else if (tok === 't') this.tone(180, .15, 'sine', v.vol * 2.5, this.nextT, -60, this.bgmGain); }
-          else this.tone(noteHz(tok), stepDur * len * (v.gate || .9), v.wave || 'square', v.vol, this.nextT, 0, this.bgmGain);
+          if (v.drum) { if (tok === 'k') { this.tone(80, .22, 'sine', v.vol * 3.4, this.nextT, -45, this.bgmGain); this.noise(.02, v.vol * 1.2, this.nextT, 3000, this.bgmGain); } else if (tok === 's') { this.noise(.14, v.vol * 2, this.nextT, 1800, this.bgmGain); this.tone(190, .08, 'triangle', v.vol * 1.5, this.nextT, -60, this.bgmGain); } else if (tok === 'h') this.noise(.04, v.vol, this.nextT, 7000, this.bgmGain); else if (tok === 't') this.tone(180, .15, 'sine', v.vol * 2.5, this.nextT, -60, this.bgmGain); }
+          else this.voice(noteHz(tok), stepDur * len * (v.gate || .9), v.wave || 'square', v.vol, this.nextT, v === tr.voices[0]);
         }
       }
       this.step++; this.nextT += stepDur;
