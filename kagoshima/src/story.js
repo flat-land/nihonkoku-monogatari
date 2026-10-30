@@ -11,7 +11,7 @@ async function startChapter(n, title, sub, mapId, x, y, lines) {
   Audio8.cur = null; bgm(typeof G.map.bgm === 'function' ? G.map.bgm() : G.map.bgm);
   await fadeIn(800);
 }
-function drop(id) { G.party = G.party.filter(p => p !== id); flag('in_' + id, false); rebuildChain(); }
+function drop(id) { G.party = G.party.filter(p => p !== id); G.waiting = (G.waiting || []).filter(p => p !== id); flag('in_' + id, false); rebuildChain(); }
 function lvUp(id, lv) { const m = G.mem[id]; if (m && m.lv < lv) { m.lv = lv; m.exp = expAt(lv); m.hp = mhp(m); m.ki = mki(m); } }
 async function choice(text, std, opts, who = 'shinpachi') { return pickOne(who === null ? null : who, text, std, opts); }
 
@@ -53,7 +53,7 @@ const STORY = {
     if (G.chapter === 8 && !F('haha8')) { flag('haha8'); await Q([['haha', '新八……ずいぶん、たくましゅうなったねえ。', '新八……ずいぶん、たくましくなったねえ。'], ['haha', 'おまえの背中は、吉之助さぁに似てきたよ。', 'あなたの背中は、吉之助さんに似てきたよ。']]); }
     const L = HAHA[Math.min(G.chapter, 8)] || HAHA[0];
     await S('haha', L[0], L[1]);
-    if (await ask('haha', '家で休んでいくな？', '家で休んでいく？')) await rest();
+    await S('haha', '家で休んでいくな？', '家で休んでいく？'); await lodge('haha', 0);
   },
   async senkichiJoin() {
     await Q([
@@ -482,10 +482,16 @@ const STORY = {
     await STORY.ch4Start();
   },
   async inn() {
-    if (await ask('innkeeper', 'お泊まりですか？ 20文でございます。')) {
-      if (G.money < 20) { await N('お金が足りない。'); return; }
-      G.money -= 20; await rest();
-    }
+    await S('innkeeper', 'お泊まりですか？ 20文でございます。\nお連れさまを お預かりすることもできますよ。', 'お泊まりですか？ 20文でございます。\nお連れさまを お預かりすることもできますよ。');
+    await lodge('innkeeper', 20);
+  },
+  async chaya() {
+    await S('woman', 'おいでやす。お茶でも どうぞ。\nお連れさんは、うちで お待ちいただけますえ。', 'いらっしゃいませ。お茶でもどうぞ。\nお連れさんは、うちでお待ちいただけますよ。');
+    await lodge('woman', 10);
+  },
+  async dojo() {
+    await S('elder', '郷中の稽古場じゃ。\n連れて行かん者は、ここで稽古させておくでな。', '郷中の稽古場だ。\n連れて行かない者は、ここで稽古させておくぞ。');
+    await roster();
   },
   async onsen8() { return STORY.onsen8Impl(); },
 

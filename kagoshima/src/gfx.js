@@ -22,6 +22,26 @@ function outline(c, col = '#1c1219') {
   }
   d.data.set(o); x.putImageData(d, 0, 0); return c;
 }
+// SFCのドットの大きさにそろえる：2x2の4ピクセルを1つの「ドット」にまとめる（いちばん多い色、同数なら暗い色）。
+// ol を渡すと、まとめたあとのドット単位で輪郭線を引く。画面は512x384だが、見た目は256x192のドット絵になる。
+function dot(c, ol) {
+  const w = c.width, h = c.height, sw = Math.ceil(w / 2), sh = Math.ceil(h / 2);
+  const src = c.getContext('2d').getImageData(0, 0, w, h).data, s = mk(sw, sh), sx = s.getContext('2d'), out = sx.createImageData(sw, sh), o = out.data;
+  for (let y = 0; y < sh; y++) for (let x = 0; x < sw; x++) {
+    const cols = [], cnt = []; let clear = 0;
+    for (let j = 0; j < 2; j++) for (let i = 0; i < 2; i++) {
+      const px = x * 2 + i, py = y * 2 + j; if (px >= w || py >= h) { clear++; continue; }
+      const k = (py * w + px) * 4; if (src[k + 3] < 24) { clear++; continue; }
+      const key = (src[k] << 16 | src[k + 1] << 8 | src[k + 2]) * 256 + src[k + 3], f = cols.indexOf(key);
+      if (f < 0) { cols.push(key); cnt.push(1); } else cnt[f]++;
+    }
+    if (clear >= 3) continue;
+    let best = 0; for (let n = 1; n < cols.length; n++) { const lum = v => ((v / 256 >> 16) & 255) + ((v / 256 >> 8) & 255) + ((v / 256) & 255); if (cnt[n] > cnt[best] || cnt[n] === cnt[best] && lum(cols[n]) < lum(cols[best])) best = n; }
+    const v = cols[best], q = (y * sw + x) * 4; o[q] = (v / 256 >> 16) & 255; o[q + 1] = (v / 256 >> 8) & 255; o[q + 2] = (v / 256) & 255; o[q + 3] = v % 256;
+  }
+  sx.putImageData(out, 0, 0); if (ol) outline(s, ol);
+  const r = mk(w, h), rx = r.getContext('2d'); rx.imageSmoothingEnabled = false; rx.drawImage(s, 0, 0, sw * 2, sh * 2); return r;
+}
 function speck(x, r, n, cols, w = 32, h = 32, sz = 1) { for (let i = 0; i < n; i++) P(x, r() * w, r() * h, sz, sz, cols[(r() * cols.length) | 0]); }
 
 // ---------- マップタイル（32x32） ----------
@@ -87,7 +107,7 @@ function tileImg(ch, f, v) {
     const c = mk(32, 32), x = c.getContext('2d'), base = v & 15, bits = v >> 4;
     (TP[ch] || TP.x)(x, rnd(ch.charCodeAt(0) * 31 + base * 7 + 1), f, base);
     if (bits) paintEdge(x, ch, bits, f);
-    TILE_CACHE[key] = c;
+    TILE_CACHE[key] = dot(c);
   }
   return TILE_CACHE[key];
 }
@@ -239,12 +259,14 @@ function bldImg(b) {
     x.fillStyle = 'rgba(0,0,0,.3)'; x.fillRect(0, wt + 3, W, 3);
     sign(H - 34);
   }
-  return (BLD_CACHE[key] = { c, ox: -M, oy: -up });
+  return (BLD_CACHE[key] = { c: dot(c), ox: -M, oy: -up });
 }
 
 // ---------- 人物（マップ 32x48 ／ 戦闘 64x96） ----------
 // p: { skin, hair, hs(髪型), hat, body, body2, cloth, belt, sword, big, crest, beard, pose, kind }
 // 頭身は約3。光は左上から当たる（右と下が暗い）。
+// 逆立つ髪の房：根元 (a,b) から先端 (c,d) へ、だんだん細くなる
+function spikes(R, list, col, hi) { for (const [a, b, c, d, w] of list) { const n = Math.max(2, Math.ceil(Math.hypot(c - a, d - b))); for (let k = 0; k <= n; k++) { const t = k / n, ww = Math.max(1, w * (1 - t)); R(a + (c - a) * t - ww / 2, b + (d - b) * t - .5, ww, 1.6, col); } if (hi) R(a + (c - a) * .35 - .5, b + (d - b) * .35, 1, 2, hi); } }
 function paintFig(x, p, d, f, s = 1) {
   const R = (a, b, w, h, c) => P(x, a * s, b * s, w * s, h * s, c);
   const E = (cx, cy, rx, ry, c) => ell(x, cx * s, cy * s, rx * s, ry * s, c);
@@ -319,6 +341,7 @@ function paintFig(x, p, d, f, s = 1) {
     if (hs === 'mage' || hs === 'boy') { E(hx, hy - 4, 5, 3, pate); R(hx - 1, hy - 10, 3, 7, hr); R(hx - 1, hy - 10, 1, 6, hrL); R(hx - 1, hy - 4, 3, 1, '#e8e0d0'); }
     if (hs === 'woman') { E(hx, hy - 8, 6.5, 4, hr); E(hx, hy + 5, 6, 3, hr); R(hx - 7, hy - 9, 14, 1.5, '#d8b040'); E(hx - 2, hy - 10, 2, 1, hrL); }
     if (hs === 'west' || hs === 'short' || hs === 'kid') for (let i = -6; i < 7; i += 3) R(hx + i, hy + 5, 2, 2, hr);
+    if (hs === 'spiky' || hs === 'wavy') { spikes(R, [[-6, -4, -11, -10, 4], [-2, -6, -4, -12, 4], [2, -6, 4, -12, 4], [6, -4, 11, -10, 4], [-7, 2, -10, 6, 3], [7, 2, 10, 6, 3], [0, 4, 1, 9, 5]], hr, hrL); }
   } else if (d === 0) {
     if (hs === 'mage' || hs === 'boy') {
       E(hx, hy - 4, 6, 3.5, pate); R(hx - 3, hy - 6, 2, 1, shade(pate, .3));
@@ -332,6 +355,13 @@ function paintFig(x, p, d, f, s = 1) {
       for (const [i, h] of tufts) R(hx + i, hy - 1, 2, h, hr);
       if (hs === 'west') { R(hx - 2, hy - 8, 1, 7, hrD); E(hx + 3, hy - 6, 4, 2, hrL); }
       else { R(hx - 5, hy - 7, 4, 1, hrL); R(hx - 3, hy - 8, 3, 1, hrL); for (const i of [-6, -1, 4]) R(hx + i, hy - 10, 2, 2, hr); }
+    } else if (hs === 'spiky' || hs === 'wavy') {
+      // 鳥山明ふうの、逆立った黒髪（wavy は龍馬の癖っ毛）
+      E(hx, hy - 4, 8.5 + big * .5, 5.5, hr); R(hx - 8, hy - 4, 2, 8, hr); R(hx + 6, hy - 4, 2, 8, hrD);
+      if (hs === 'spiky') spikes(R, [[-6, -5, -12, -11, 4], [-3, -7, -5, -12, 4], [1, -8, 2, -12, 4], [4, -7, 8, -12, 4], [7, -5, 13, -9, 3], [-8, -1, -12, 2, 3], [8, -1, 12, 2, 3]], hr, hrL);
+      else { for (const [i, j] of [[-8, -5], [-4, -8], [0, -9], [4, -8], [8, -5], [-9, 0], [9, 0]]) E(hx + i, hy + j, 3, 2.6, hr); E(hx - 3, hy - 9, 2, 1, hrL); }
+      spikes(R, [[-5, -3, -6, 2, 3], [-1, -4, -1, 1, 3], [3, -3, 4, 2, 3]], hr);
+      R(hx - 4, hy - 7, 3, 1, hrL);
     } else if (hs === 'woman') {
       E(hx, hy - 4, 8.5, 5, hr); E(hx, hy - 10, 6.5, 4, hr); E(hx - 8, hy - 2, 2.5, 4, hr); E(hx + 8, hy - 2, 2.5, 4, hrD);
       R(hx - 7, hy - 9, 14, 1.5, '#d8b040'); R(hx + 5, hy - 13, 1, 5, '#d8b040'); E(hx + 5.5, hy - 13.5, 1.4, 1.4, '#e85a7a'); E(hx - 3, hy - 12, 2.5, 1, hrL); R(hx - 1, hy - 2, 1, 1, hrD);
@@ -355,6 +385,8 @@ function paintFig(x, p, d, f, s = 1) {
     if (hs !== 'bald') { E(hx + 2, hy - 2, 7, 6, hr); R(hx + 2, hy - 2, 6, 9, hr); R(hx + 5, hy + 1, 3, 6, hrD); R(hx - 2, hy - 7, 5, 1, hrL); }
     if (hs === 'mage' || hs === 'boy') { E(hx - 1, hy - 4, 4.5, 3, pate); R(hx - 1, hy - 10, 7, 3, hr); R(hx - 1, hy - 10, 6, 1, hrL); R(hx + 4, hy - 9, 3, 4, hr); R(hx + 3, hy - 8, 1, 3, '#ece4d4'); if (hs === 'boy') R(hx - 7, hy - 5, 5, 3, hr); }
     if (hs === 'short' || hs === 'kid' || hs === 'west') { R(hx - 6, hy - 5, 5, 3, hr); R(hx - 6, hy - 2, 2, 2, hr); R(hx - 3, hy - 9, 6, 2, hr); }
+    if (hs === 'spiky') spikes(R, [[-1, -7, -3, -12, 4], [3, -7, 7, -12, 4], [6, -4, 12, -7, 4], [7, 0, 12, 1, 3], [-5, -4, -9, -1, 3]], hr, hrL);
+    if (hs === 'wavy') for (const [i, j] of [[-2, -8], [3, -8], [7, -5], [8, 0], [-6, -4]]) E(hx + i, hy + j, 3, 2.6, hr);
     if (hs === 'woman') { E(hx + 2, hy - 9, 6, 4, hr); E(hx + 7, hy + 3, 3, 3, hr); R(hx - 3, hy - 8, 12, 1.5, '#d8b040'); }
     if (p.eyes === 'narrow' || p.eyes === 'closed') R(hx - 5, hy + 2, 3, 1, ink);
     else { R(hx - 5, hy + 1, 3, 1, ink); R(hx - 5, hy + 2, 2, 2, iris); R(hx - 3, hy + 2, 1, 2, white); R(hx - 5, hy + 2, 1, 1, '#fff'); }
@@ -371,7 +403,7 @@ function paintFig(x, p, d, f, s = 1) {
   if (H === 'shako') { R(hx - 6, hy - 15, 12, 10, '#1a1a1a'); R(hx - 6, hy - 15, 2, 10, '#3a3a3a'); R(hx - 6, hy - 7, 12, 2, '#c8a040'); R(hx - 1, hy - 14, 2, 3, '#e0e0e0'); }
   if (H === 'bicorne') { E(hx, hy - 8, 12, 3.5, '#1a1a2a'); E(hx - 3, hy - 10, 5, 1, '#3a3a4a'); R(hx - 1, hy - 11, 2, 2, '#c8a040'); }
   if (H === 'kepi') { const hc = p.hatc || '#1a2244'; R(hx - 7, hy - 12, 14, 7, hc); R(hx - 7, hy - 12, 3, 7, shade(hc, .25)); R(hx - 7, hy - 7, 14, 2, '#c02020'); if (d !== 3) R(hx - 8 + (d === 1 ? -2 : 0), hy - 5, d === 1 ? 7 : 16, 2, '#111'); if (d === 0) R(hx - 1, hy - 11, 2, 2, '#e0c040'); }
-  if (H === 'hachimaki') { R(hx - 8, hy - 3, 16, 2, '#f4f4f4'); R(hx - 8, hy - 2, 16, 1, '#d0d0d0'); if (d === 1) { R(hx + 7, hy - 3, 3, 2, '#f4f4f4'); R(hx + 9, hy - 2, 3, 4, '#f4f4f4'); } if (d === 3) { R(hx - 2, hy - 3, 4, 3, '#f4f4f4'); R(hx - 3, hy, 2, 4, '#f4f4f4'); R(hx + 1, hy, 2, 4, '#e0e0e0'); } }
+  if (H === 'hachimaki') { const hc = p.hatc || '#f4f4f4'; R(hx - 8, hy - 3, 16, 2, hc); R(hx - 8, hy - 2, 16, 1, shade(hc, -.18)); if (d === 1) { R(hx + 7, hy - 3, 3, 2, '#f4f4f4'); R(hx + 9, hy - 2, 3, 4, '#f4f4f4'); } if (d === 3) { R(hx - 2, hy - 3, 4, 3, '#f4f4f4'); R(hx - 3, hy, 2, 4, '#f4f4f4'); R(hx + 1, hy, 2, 4, '#e0e0e0'); } }
   if (H === 'eboshi') { R(hx - 4, hy - 17, 8, 11, '#1a1a1a'); R(hx - 3, hy - 17, 3, 11, '#2e2e2e'); }
   if (H === 'zukin') { E(hx, hy - 2, 8.5, 8.5, p.hatc || '#3a3a5a'); E(hx - 3, hy - 5, 3, 2, shade(p.hatc || '#3a3a5a', .2)); if (d === 0) { E(hx, hy + 2, 5.5, 3.5, sk); R(hx - 4, hy + 1, 2, 2, ink); R(hx + 2, hy + 1, 2, 2, ink); } }
 }
@@ -422,8 +454,9 @@ function charImg(key, d, f) {
   const p = sprParams(key), ck = key + JSON.stringify(p);
   if (!CH_CACHE[ck]) {
     const out = {};
+    // 逆立つ髪がはみ出さないよう、上に8px余白をとる（32x56。足元は下端）
     for (const dd of [0, 1, 3]) for (const ff of [0, 1, 2]) {
-      const c = mk(32, 48), x = c.getContext('2d');
+      const c = mk(32, 56), x = c.getContext('2d'); x.translate(0, 8);
       if (p.kind === 'dog') paintDog(x, p, dd, ff === 1 ? 1 : 0);
       else if (p.kind === 'pot') { ell(x, 16, 45, 10, 2.5, 'rgba(0,0,0,.3)'); ell(x, 16, 36, 10, 9, '#1c1a1e'); P(x, 10, 24, 12, 6, '#1c1a1e'); ell(x, 16, 24, 6, 2, '#3a3640'); P(x, 9, 32, 2, 6, '#4a4650'); P(x, 12, 30, 1, 2, '#6a6670'); }
       else if (p.kind === 'chest') { ell(x, 16, 45, 12, 2.5, 'rgba(0,0,0,.3)'); P(x, 4, 30, 24, 15, p.open ? '#6a4a2a' : '#9a7a4a'); for (let i = 5; i < 28; i += 3) P(x, i, 30, 1, 15, '#7a5a32'); P(x, 3, 27, 26, 5, p.open ? '#4a3420' : '#b89a5a'); P(x, 3, 27, 26, 1, '#d8ba7a'); P(x, 14, 32, 4, 4, '#c8a040'); }
@@ -431,10 +464,9 @@ function charImg(key, d, f) {
       else if (p.kind === 'horse') { const h = mk(48, 64); paintHorse(h.getContext('2d'), dd, ff === 1 ? 1 : 0); x.drawImage(h, -8, -16); }
       else if (p.kind === 'sign') { P(x, 14, 26, 4, 20, '#6a4a2a'); P(x, 4, 18, 24, 12, '#c8a46a'); P(x, 4, 18, 24, 2, '#e0c08a'); for (let i = 7; i < 26; i += 4) P(x, i, 22, 2, 5, '#3a2a1a'); }
       else paintFig(x, p, dd, ff);
-      if (!['boat', 'sign'].includes(p.kind)) outline(c);
-      out[dd + '_' + ff] = c;
+      out[dd + '_' + ff] = dot(c, ['boat', 'sign'].includes(p.kind) ? null : '#1c1219');
     }
-    for (const ff of [0, 1, 2]) { const c = mk(32, 48), x = c.getContext('2d'); x.translate(32, 0); x.scale(-1, 1); x.drawImage(out['1_' + ff], 0, 0); out['2_' + ff] = c; }
+    for (const ff of [0, 1, 2]) { const c = mk(32, 56), x = c.getContext('2d'); x.translate(32, 0); x.scale(-1, 1); x.drawImage(out['1_' + ff], 0, 0); out['2_' + ff] = c; }
     CH_CACHE[ck] = out;
   }
   return CH_CACHE[ck][d + '_' + f];
@@ -443,7 +475,7 @@ const HORSE_CACHE = {};
 function horseImg(d, f) {
   const k = d + '_' + f;
   if (!HORSE_CACHE[k]) {
-    let c = mk(48, 64); paintHorse(c.getContext('2d'), d === 2 ? 1 : d, f); outline(c);
+    let c = mk(48, 64); paintHorse(c.getContext('2d'), d === 2 ? 1 : d, f); c = dot(c, '#1c1219');
     if (d === 2) { const m = mk(48, 64), x = m.getContext('2d'); x.translate(48, 0); x.scale(-1, 1); x.drawImage(c, 0, 0); c = m; }
     HORSE_CACHE[k] = c;
   }
@@ -574,15 +606,15 @@ function enemyImg(id) {
   if (EN_CACHE[id]) return EN_CACHE[id];
   const s = ENEMIES[id].spr; let c;
   if (s.t === 'ship') { c = mk(200, 112); paintShip(c.getContext('2d')); }
-  else if (s.t === 'boat') { c = mk(112, 72); paintBoat(c.getContext('2d')); outline(c); }
-  else if (s.t === 'shell') { c = mk(56, 56); paintShell(c.getContext('2d')); outline(c); }
-  else if (s.t === 'castle') { c = mk(200, 150); paintCastle(c.getContext('2d'), 200, 150, s); outline(c); }
-  else if (s.t === 'army') { c = mk(140, 100); paintArmy(c.getContext('2d'), 140, 100, s); outline(c); }
-  else if (s.t === 'scroll') { c = mk(96, 108); paintScroll(c.getContext('2d'), s); outline(c); }
+  else if (s.t === 'boat') { c = mk(112, 72); paintBoat(c.getContext('2d')); }
+  else if (s.t === 'shell') { c = mk(56, 56); paintShell(c.getContext('2d')); }
+  else if (s.t === 'castle') { c = mk(200, 150); paintCastle(c.getContext('2d'), 200, 150, s); }
+  else if (s.t === 'army') { c = mk(140, 100); paintArmy(c.getContext('2d'), 140, 100, s); }
+  else if (s.t === 'scroll') { c = mk(96, 108); paintScroll(c.getContext('2d'), s); }
   else if (s.t === 'cloud') { c = mk(112, 72); paintCloud(c.getContext('2d')); }
-  else if (s.t === 'dog') { c = mk(64, 96); const t = mk(32, 48); paintDog(t.getContext('2d'), s, 0, 0); const x = c.getContext('2d'); x.imageSmoothingEnabled = false; x.drawImage(t, 0, 0, 64, 96); outline(c); }
-  else { c = mk(64, 96); const x = c.getContext('2d'); paintFig(x, s, 0, 0, 2); paintPose(x, s, 2); outline(c); }
-  return (EN_CACHE[id] = c);
+  else if (s.t === 'dog') { c = mk(64, 96); const t = mk(32, 48); paintDog(t.getContext('2d'), s, 0, 0); const x = c.getContext('2d'); x.imageSmoothingEnabled = false; x.drawImage(t, 0, 0, 64, 96); }
+  else { c = mk(64, 96); const x = c.getContext('2d'); paintFig(x, s, 0, 0, 2); paintPose(x, s, 2); }
+  return (EN_CACHE[id] = dot(c, ['ship', 'cloud'].includes(s.t) ? null : '#1c1219'));
 }
 
 // ---------- 背景（512x384） ----------
@@ -619,14 +651,12 @@ function treeImg(ch, v) {
     disc(x, 18, 20 - s, 11, g[1]); disc(x, 26, 24, 7, g[1]); disc(x, 11, 27, 6, g[1]);
     disc(x, 15, 15 - s, 6, g[2]); disc(x, 24, 18, 4, g[2]); P(x, 12, 11 - s, 4, 2, g[3]); P(x, 22, 15, 3, 2, g[3]); P(x, 9, 24, 3, 2, g[2]);
     for (let i = 0; i < 14; i++) P(x, 8 + r() * 24, 14 + r() * 22, 2, 1, r() < .5 ? g[0] : g[2]);
-    outline(c, '#173a16');
   } else {
     P(x, 18, 30, 4, 26, '#6b4426'); P(x, 18, 30, 1, 26, '#8a5a30');
     const tiers = [[42, 17, '#24502a'], [33, 14, '#2d6233'], [24, 11, '#356f3a'], [16, 7, '#3e7a42']];
     for (const [y, w, col] of tiers) { ell(x, 20 + (v % 2 ? 1 : -1), y, w, 4, col); P(x, 20 - w + 4, y - 2, w, 1, shade(col, .35)); }
-    outline(c, '#122a14');
   }
-  return (TREE_CACHE[k] = c);
+  return (TREE_CACHE[k] = dot(c, ch === 'T' ? '#173a16' : '#122a14'));
 }
 // マップ用の桜島（224x176）。海の上に、裾野の緑と波打ち際まで描いて「浮いて見えない」ようにする
 let SAKURA_IMG = null;
@@ -643,8 +673,7 @@ function sakurajimaImg() {
   for (let i = 0; i < 90; i++) { const t = r(), y = base - 34 + t * 26, half = 60 + t * 34, px = cx - half + r() * half * 2; disc(x, px, y, 2 + (r() * 2 | 0), px < cx ? '#4f8a40' : '#2f5a2c'); }
   // 南岳の火口の赤み
   disc(x, cx + 19, base - 6 - 98 + 2, 2, '#c84a1a');
-  outline(c, '#1a1410');
-  return (SAKURA_IMG = c);
+  return (SAKURA_IMG = dot(c, '#1a1410'));
 }
 function band(x, top, bot, y0, y1, w = 512) { const n = 24; for (let i = 0; i < n; i++) P(x, 0, y0 + (y1 - y0) * i / n, w, Math.ceil((y1 - y0) / n) + 1, mix(top, bot, i / (n - 1))); }
 function hills(x, y, amp, col, seed, w = 512) { for (let i = 0; i < w; i += 2) P(x, i, y - Math.sin(i / 40 + seed) * amp - Math.sin(i / 13 + seed * 2) * amp * .3, 2, 300, col); }
@@ -683,5 +712,5 @@ function bgImg(type) {
     case 'snowfield': band(x, '#a0a8b8', '#e8ecf0', 0, 170); hills(x, 150, 16, '#c8d0d8', 3); ground('#e8ecf0', 180, ['#d0d8e0', '#ffffff']); break;
     default: P(x, 0, 0, 512, 384, '#111');
   }
-  return (BG_CACHE[type] = c);
+  return (BG_CACHE[type] = dot(c));
 }

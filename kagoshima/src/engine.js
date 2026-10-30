@@ -12,7 +12,7 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;',
 const GAMEOVER = { gameover: true };
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
-const G = { scene: 'title', map: null, mapId: null, px: 0, py: 0, dir: 0, move: null, chain: [], party: [], mem: {}, inv: {}, money: 0, flags: {}, chapter: 0, busy: false, night: false, encSteps: 0, frame: 0, B: null, K: null, ride: false, dex: { p: {}, e: {}, l: {}, end: {} }, log: [], parts: [], emotes: [], playTime: 0 };
+const G = { scene: 'title', map: null, mapId: null, px: 0, py: 0, dir: 0, move: null, chain: [], party: [], waiting: [], mem: {}, inv: {}, money: 0, flags: {}, chapter: 0, busy: false, night: false, encSteps: 0, frame: 0, B: null, K: null, ride: false, dex: { p: {}, e: {}, l: {}, end: {} }, log: [], parts: [], emotes: [], playTime: 0 };
 const F = k => !!G.flags[k];
 const flag = (k, v = true) => { G.flags[k] = v; };
 const pts = k => G.flags[k] || 0;
@@ -46,17 +46,24 @@ document.querySelectorAll('[data-k]').forEach(b => {
   b.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); Audio8.unlock(); Input.down(k); b.classList.add('on'); });
   for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) b.addEventListener(ev, () => { Input.up(k); b.classList.remove('on'); });
 });
-// ぷにコン：左側を触ったところに出てくるスティック
+// 円形パッド：真ん中のスティックを動かしても、まわりの矢印を押しても同じ方向が入る。
+// 中心は固定なので、メニューの選択は矢印をトンと押すだけでよい。
 (() => {
-  const zone = $('#stick'), base = $('#stickBase'), knob = $('#stickKnob'); if (!zone) return;
-  let id = null, ox = 0, oy = 0;
-  zone.addEventListener('pointerdown', e => { e.preventDefault(); Audio8.unlock(); id = e.pointerId; zone.setPointerCapture(id); const r = zone.getBoundingClientRect(); ox = e.clientX - r.left; oy = e.clientY - r.top; base.style.left = ox + 'px'; base.style.top = oy + 'px'; base.classList.add('on'); knob.style.transform = 'translate(-50%,-50%)'; });
-  zone.addEventListener('pointermove', e => {
-    if (e.pointerId !== id) return; const r = zone.getBoundingClientRect(); const dx = e.clientX - r.left - ox, dy = e.clientY - r.top - oy, dist = Math.hypot(dx, dy), m = Math.min(dist, 44);
+  const zone = $('#stick'), knob = $('#stickKnob'); if (!zone) return;
+  const arw = { up: zone.querySelector('.u'), down: zone.querySelector('.d'), left: zone.querySelector('.l'), right: zone.querySelector('.r') };
+  let id = null;
+  const at = e => {
+    const r = zone.getBoundingClientRect(); let dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
+    if (document.body.classList.contains('rot')) [dx, dy] = [dy, -dx];   // 横向き表示中は画面ごと90度回っている
+    const R = zone.offsetWidth / 2, dist = Math.hypot(dx, dy), m = Math.min(dist, R * .42);
     knob.style.transform = `translate(calc(-50% + ${dist ? dx / dist * m : 0}px), calc(-50% + ${dist ? dy / dist * m : 0}px))`;
-    Input.setStick(dist < 14 ? null : Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up'));
-  });
-  const end = e => { if (e.pointerId !== id) return; id = null; base.classList.remove('on'); Input.setStick(null); };
+    const k = dist < 12 ? null : Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+    for (const d in arw) arw[d].classList.toggle('on', d === k);
+    Input.setStick(k);
+  };
+  zone.addEventListener('pointerdown', e => { e.preventDefault(); Audio8.unlock(); id = e.pointerId; zone.setPointerCapture(id); at(e); });
+  zone.addEventListener('pointermove', e => { if (e.pointerId === id) at(e); });
+  const end = e => { if (e.pointerId !== id) return; id = null; knob.style.transform = 'translate(-50%,-50%)'; for (const d in arw) arw[d].classList.remove('on'); Input.setStick(null); };
   zone.addEventListener('pointerup', end); zone.addEventListener('pointercancel', end);
 })();
 $('#screen').addEventListener('pointerdown', e => { Audio8.unlock(); const h = UI.top(); if (h && h.tap) { e.preventDefault(); Input.q.push('ok'); } });
@@ -88,6 +95,7 @@ function say(who, text, std) {
     DLG.el = place(el('div', 'win dlg'), 6, 192, 372, 90);
     DLG.el.innerHTML = '<canvas class="por" width="64" height="64"></canvas><div class="nm"></div><div class="tx"></div><div class="arw">▼</div>';
     DLG.sub = place(el('div', 'win sub'), 6, 150, 372); DLG.sub.style.display = 'none';
+    DLG.bust = place(el('canvas', 'bust'), 252, 62, 128, 154); DLG.bust.width = 300; DLG.bust.height = 360; DLG.bust.style.display = 'none';
   }
   clearTimeout(DLG.hideT);
   if (who && typeof who === 'string') meet(who);
@@ -95,8 +103,12 @@ function say(who, text, std) {
   let shown = text, sub = null;
   if (std && OPT.lang === 'std') shown = std;
   if (std && OPT.lang === 'both') sub = std;
-  d.style.display = 'block'; d.classList.toggle('narr', !info); d.classList.toggle('hasp', !!(info && info.por));
-  if (info && info.por) { const pc = por.getContext('2d'); pc.clearRect(0, 0, 64, 64); pc.drawImage(portraitImg(info.por), 0, 0); }
+  // 顔絵は主要人物だけ（高画質のイラストを右上に重ねる）。モブは名前だけ
+  const main = isMain(who);
+  d.style.display = 'block'; d.classList.toggle('narr', !info); d.classList.remove('hasp'); d.classList.toggle('hasbust', main);
+  DLG.bust.style.display = main ? 'block' : 'none';
+  if (main) { const bc = DLG.bust.getContext('2d'); bc.clearRect(0, 0, 300, 360); bc.drawImage(hiPortrait(who), 0, 0); }
+  DLG.sub.style.width = (main ? 246 : 372) + 'px';
   nm.textContent = info ? info.name : '';
   DLG.sub.style.display = sub ? 'block' : 'none'; if (sub) DLG.sub.textContent = '訳）' + sub.replace(/\n/g, '');
   G.log.push({ n: info ? info.name : '', t: shown }); if (G.log.length > 300) G.log.shift();
@@ -111,7 +123,7 @@ function say(who, text, std) {
     UI.push(h);
   });
 }
-function hideDlg() { if (DLG.el) { DLG.el.style.display = 'none'; DLG.sub.style.display = 'none'; } }
+function hideDlg() { if (DLG.el) { DLG.el.style.display = 'none'; DLG.sub.style.display = 'none'; DLG.bust.style.display = 'none'; } }
 function keepDlg() { clearTimeout(DLG.hideT); }
 const N = t => say(null, t);
 const S = (who, t, std) => say(who, t, std);
@@ -195,20 +207,47 @@ const mhp = m => stat(m, 'hp'), mki = m => stat(m, 'ki');
 function skillsOf(m) { return HEROES[m.id].skills.filter(([sid, lv, f]) => m.lv >= lv && (!f || F(f))).map(s => s[0]).filter(s => !SKILLS[s].need || G.party.includes(SKILLS[s].need)); }
 function nameOf(id) { const n = PEOPLE[id].name; return typeof n === 'function' ? n() : n; }
 function mkMember(id, lv = 1) { const m = { id, name: nameOf(id), lv, exp: expAt(lv), eq: { ...HEROES[id].start }, hp: 0, ki: 0 }; m.hp = mhp(m); m.ki = mki(m); return m; }
-function restAll() { for (const id of G.party) { const m = G.mem[id]; m.hp = mhp(m); m.ki = mki(m); } }
+function restAll() { for (const id of [...G.party, ...(G.waiting || [])]) { const m = G.mem[id]; m.hp = mhp(m); m.ki = mki(m); } }
 function rebuildChain() { G.chain = G.party.slice(1).map(() => ({ x: G.px, y: G.py, ox: G.px, oy: G.py, dir: G.dir })); }
 function partyLv() { return Math.round(G.party.reduce((s, id) => s + G.mem[id].lv, 0) / G.party.length); }
+// 連れて行けるのは4人まで。ほかの仲間は「控え」として、道場・宿・茶屋・陣で入れ替えられる
+const PARTY_MAX = 4;
+async function roster() {
+  if (G.party.length + (G.waiting || []).length < 2) { await N('入れ替えられる仲間が まだいない。'); return; }
+  let cur = 0;
+  while (true) {
+    const ids = [...G.party, ...G.waiting];
+    const items = ids.map(id => ({ label: (G.party.includes(id) ? '連　' : '控　') + G.mem[id].name, right: `Lv${G.mem[id].lv}`, disabled: id === 'shinpachi' })).concat([{ label: 'おわる' }]);
+    const i = await choose(items, { x: 92, y: 20, w: 200, start: cur, title: `連れて行く仲間（${G.party.length}/${PARTY_MAX}）` });
+    if (i < 0 || i === ids.length) break; cur = i;
+    const id = ids[i];
+    if (id === 'shinpachi') { await N('新八は いつも一行の先頭だ。'); continue; }
+    if (G.party.includes(id)) { G.party = G.party.filter(p => p !== id); G.waiting.push(id); SFX.play('cancel'); }
+    else if (G.party.length >= PARTY_MAX) { await N(`連れて行けるのは ${PARTY_MAX}人までだ。\n先に だれかを控えに回そう。`); }
+    else { G.waiting = G.waiting.filter(p => p !== id); G.party.push(id); SFX.play('join'); }
+    rebuildChain();
+  }
+}
+// 宿・茶屋・陣・家で：休む／仲間の入れ替え
+async function lodge(who, price, msg, std) {
+  const i = await choose([{ label: price ? `休む（${price}文）` : '休む' }, { label: '仲間を入れ替える' }, { label: 'やめる' }], { x: 230, y: 120, w: 146 });
+  if (i === 0) { if (G.money < price) { await N('お金が足りない。'); return; } G.money -= price; await rest(); }
+  if (i === 1) await roster();
+}
 async function join(id, lv, quiet) {
   if (!G.mem[id]) G.mem[id] = mkMember(id, lv || 1);
   else if (lv && G.mem[id].lv < lv) { const m = G.mem[id]; m.lv = lv; m.exp = expAt(lv); }
   const m = G.mem[id]; m.hp = mhp(m); m.ki = mki(m);
-  if (!G.party.includes(id)) { if (G.party.length >= 4) G.party.splice(3, 0, id); else G.party.push(id); }
+  G.waiting = (G.waiting || []).filter(p => p !== id);
+  let benched = null;
+  if (!G.party.includes(id)) { G.party.push(id); if (G.party.length > PARTY_MAX) { benched = G.party.splice(PARTY_MAX - 1, 1)[0]; G.waiting.push(benched); } }
   flag('in_' + id); flag(id); rebuildChain(); meet(id);
   if (!quiet) { SFX.play('join'); await N(`${m.name}が 仲間に加わった！`); }
+  if (benched) await N(`${G.mem[benched].name}は 控えに回った。\n（道場・宿・茶屋・陣で、連れて行く仲間を入れ替えられる）`);
 }
 async function leave(id, why) {
-  const m = G.mem[id]; if (!m || !G.party.includes(id)) return;
-  G.party = G.party.filter(p => p !== id); flag('in_' + id, false);
+  const m = G.mem[id]; if (!m || !(G.party.includes(id) || (G.waiting || []).includes(id))) return;
+  G.party = G.party.filter(p => p !== id); G.waiting = (G.waiting || []).filter(p => p !== id); flag('in_' + id, false);
   for (const s of ['a', 'h', 'x']) if (m.eq[s] && !HEROES[id].start[s]) { addItem(m.eq[s]); delete m.eq[s]; }
   rebuildChain();
   await N(why || `${m.name}が 一行を離れた。`);
@@ -420,7 +459,8 @@ function cam() {
   const m = G.map, t = G.move ? G.move.t : 1;
   const ppx = (G.move ? G.move.fx + (G.px - G.move.fx) * t : G.px) * TS, ppy = (G.move ? G.move.fy + (G.py - G.move.fy) * t : G.py) * TS;
   const mw = m.w * TS, mh = m.h * TS;
-  return { ppx, ppy, t, cx: Math.round(mw <= CW ? (mw - CW) / 2 : clamp(ppx - CW / 2 + 16, 0, mw - CW)), cy: Math.round(mh <= CH ? (mh - CH) / 2 : clamp(ppy - CH / 2 + 16, 0, mh - CH)) };
+  const ev = v => Math.round(v / 2) * 2;  // ドット(2px)単位でスクロールする
+  return { ppx, ppy, t, cx: ev(mw <= CW ? (mw - CW) / 2 : clamp(ppx - CW / 2 + 16, 0, mw - CW)), cy: ev(mh <= CH ? (mh - CH) / 2 : clamp(ppy - CH / 2 + 16, 0, mh - CH)) };
 }
 function drawMap() {
   const m = G.map, { ppx, ppy, t, cx, cy } = cam();
@@ -453,7 +493,7 @@ function drawMap() {
   if (G.ride) list.push({ x: ppx - 8, y: ppy - .05, img: horseImg(G.dir, G.move ? (G.frame >> 2) & 1 : 0), w: 48, h: 64, horse: 1 });
   list.push({ x: ppx, y: ppy + (G.ride ? -14 : 0), img: charImg(G.party[0], G.dir, G.ride ? 0 : wf), sy: G.ride ? ppy : null });
   list.sort((a, b) => (a.sy ?? a.y) - (b.sy ?? b.y));
-  for (const s of list) ctx.drawImage(s.img, Math.round(s.x - cx), Math.round(s.y - cy - (s.raw ? 0 : s.horse ? 32 : 16)));
+  for (const s of list) ctx.drawImage(s.img, Math.round((s.x - cx) / 2) * 2, Math.round((s.y - cy - (s.raw ? 0 : s.horse ? 32 : 24)) / 2) * 2);
   if (fires.length) {
     ctx.save(); ctx.globalCompositeOperation = 'lighter';
     for (const [fx0, fy0] of fires) { const g = ctx.createRadialGradient(fx0 + 16, fy0 + 16, 4, fx0 + 16, fy0 + 16, 60); g.addColorStop(0, `rgba(255,140,40,${.28 + Math.random() * .08})`); g.addColorStop(1, 'rgba(255,60,0,0)'); ctx.fillStyle = g; ctx.fillRect(fx0 - 44, fy0 - 44, 120, 120); }
@@ -569,11 +609,11 @@ async function settings() {
   while (true) {
     const items = [
       { label: '言葉', right: LANG[OPT.lang] }, { label: '文字の速さ', right: TXT[OPT.text] }, { label: '会話・戦闘の速さ', right: '×' + OPT.speed },
-      { label: 'オート送り', right: OPT.auto ? 'ON' : 'OFF' }, { label: 'BGM', right: Math.round(OPT.bgm * 10) }, { label: '効果音', right: Math.round(OPT.sfx * 10) }, { label: 'ミニマップ', right: OPT.mini ? '表示' : '非表示' }, { label: '閉じる' },
+      { label: 'オート送り', right: OPT.auto ? 'ON' : 'OFF' }, { label: 'BGM', right: Math.round(OPT.bgm * 10) }, { label: '効果音', right: Math.round(OPT.sfx * 10) }, { label: 'ミニマップ', right: OPT.mini ? '表示' : '非表示' }, { label: '画面の向き', right: OPT.rot ? '横向きで表示' : '端末に合わせる' }, { label: '閉じる' },
     ];
     const cyc = (k, list) => { const j = list.indexOf(OPT[k]); OPT[k] = list[(j + 1) % list.length]; };
     i = await choose(items, { x: 96, y: 40, w: 200, start: i, title: '設定' });
-    if (i < 0 || i === 7) break;
+    if (i < 0 || i === 8) break;
     if (i === 0) cyc('lang', ['kago', 'std', 'both']);
     if (i === 1) OPT.text = (OPT.text + 1) % 4;
     if (i === 2) cyc('speed', [1, 3, 5]);
@@ -581,6 +621,7 @@ async function settings() {
     if (i === 4) OPT.bgm = Math.round(((OPT.bgm * 10 + 1) % 11)) / 10;
     if (i === 5) { OPT.sfx = Math.round(((OPT.sfx * 10 + 1) % 11)) / 10; }
     if (i === 6) OPT.mini = !OPT.mini;
+    if (i === 7) { OPT.rot = !OPT.rot; setTimeout(fit, 50); }
     saveOpt(); if (i === 5) SFX.play('ok');
   }
   G.setOpen = false;
@@ -788,7 +829,7 @@ async function shopTalk(kind) {
   const s = SHOP_TALK[kind] || SHOP_TALK.dougu;
   await S(s[0], s[1], s[2]);
   // 戦場の陣では、商人のそばで休める（宿のない場所でも回復できるように）
-  if (kind === 'jinchu' && await ask(s[0], '陣で 少し休んでいきもすか？（無料）', '陣で 少し休んでいきますか？（無料）')) await rest();
+  if (kind === 'jinchu') { await S(s[0], '陣で 休んでいきもすか？\n控えの衆も ここに居っど。', '陣で 休んでいきますか？\n控えの人たちも ここにいますよ。'); await lodge(s[0], 0); }
   await shop(SHOPS[kind]());
 }
 async function rest() { await fadeOut(); restAll(); bgm(null); SFX.play('bell'); await sleep(900); await fadeIn(); SFX.play('heal'); if (G.map && G.map.bgm) { Audio8.cur = null; bgm(typeof G.map.bgm === 'function' ? G.map.bgm() : G.map.bgm); } await N('ぐっすり眠って、みんな元気になった！'); }
@@ -1045,6 +1086,8 @@ async function victory(B) {
   if (exp) await bmsg(`それぞれ ${exp} の 経験値を得た。`, 900);
   if (gold) { G.money += gold; SFX.play('coin'); await bmsg(`${gold}文を 手に入れた。`, 900); }
   for (const e of won) if (e.d.drop && Math.random() < e.d.drop[1]) { addItem(e.d.drop[0]); SFX.play('item'); await bmsg(`${e.name}は ${ITEMS[e.d.drop[0]].name}を 落としていった！`, 1000); }
+  // 控えの仲間も、半分の経験値を得る（置いていった仲間が弱くなりすぎないように）
+  for (const id of G.waiting || []) { const m = G.mem[id]; m.exp += Math.floor(exp / 2); while (m.exp >= expAt(m.lv + 1) && m.lv < 99) m.lv++; }
   for (const id of G.party) {
     const m = G.mem[id]; if (m.hp <= 0) continue;
     m.exp += exp;
@@ -1135,14 +1178,14 @@ function drawKassen() {
   for (let i = 0; i < nT; i++) {
     const x = 260 + (i % 7) * 34 + (i >= 7 ? 16 : 0), y = 120 + (i >= 7 ? 30 : 0);
     if (d.themUnit === 'ship') ctx.drawImage(tileImg('S', (G.frame >> 4) & 1, 0), x, y - 10);
-    else ctx.drawImage(charImg(d.themUnit || 'enemysoldier', 0, ((G.frame >> 4) + i) & 1), x, y - 30 + (K.hitThem > 0 ? (K.hitThem % 4) - 2 : 0));
+    else ctx.drawImage(charImg(d.themUnit || 'enemysoldier', 0, ((G.frame >> 4) + i) & 1), x, y - 38 + (K.hitThem > 0 ? (K.hitThem % 4) - 2 : 0));
   }
   // 味方（手前）
   const nU = cnt(K.us, 14);
   for (let i = 0; i < nU; i++) {
     const x = 20 + (i % 7) * 34 + (i >= 7 ? 16 : 0), y = 238 - (i >= 7 ? 26 : 0);
     if (d.usUnit === 'cannon') ctx.drawImage(tileImg('C', 0, 0), x, y - 16);
-    else ctx.drawImage(charImg(d.usUnit || 'satsumasoldier', 3, ((G.frame >> 4) + i) & 1), x, y - 40 + (K.hitUs > 0 ? (K.hitUs % 4) - 2 : 0));
+    else ctx.drawImage(charImg(d.usUnit || 'satsumasoldier', 3, ((G.frame >> 4) + i) & 1), x, y - 48 + (K.hitUs > 0 ? (K.hitUs % 4) - 2 : 0));
   }
   if (K.hitThem > 0) { K.hitThem--; for (let k = 0; k < 4; k++) { ctx.fillStyle = k % 2 ? '#ffe080' : '#ff8a20'; ctx.beginPath(); ctx.arc(300 + Math.random() * 200, 100 + Math.random() * 60, 4 + Math.random() * 10, 0, 7); ctx.fill(); } }
   if (K.hitUs > 0) { K.hitUs--; for (let k = 0; k < 4; k++) { ctx.fillStyle = k % 2 ? '#ffe080' : '#ff8a20'; ctx.beginPath(); ctx.arc(30 + Math.random() * 230, 200 + Math.random() * 40, 4 + Math.random() * 12, 0, 7); ctx.fill(); } }
@@ -1181,10 +1224,10 @@ async function tachiki(rounds = 5) {
 
 // ---------- セーブ・タイトル ----------
 const SAVE_KEY = 'nihonkoku-kagoshima-v2';
-function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify({ party: G.party, mem: G.mem, inv: G.inv, money: G.money, flags: G.flags, chapter: G.chapter, mapId: G.mapId === '_room' ? G.ret.map : G.mapId, px: G.mapId === '_room' ? G.ret.x : G.px, py: G.mapId === '_room' ? G.ret.y : G.py, dir: G.dir, dex: G.dex, ride: false, playTime: G.playTime })); seriesUpdate(); return true; } catch (e) { return false; } }
+function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify({ party: G.party, waiting: G.waiting || [], mem: G.mem, inv: G.inv, money: G.money, flags: G.flags, chapter: G.chapter, mapId: G.mapId === '_room' ? G.ret.map : G.mapId, px: G.mapId === '_room' ? G.ret.x : G.px, py: G.mapId === '_room' ? G.ret.y : G.py, dir: G.dir, dex: G.dex, ride: false, playTime: G.playTime })); seriesUpdate(); return true; } catch (e) { return false; } }
 function loadData() { try { const s = localStorage.getItem(SAVE_KEY); return s ? JSON.parse(s) : null; } catch (e) { return null; } }
-function applySave(d) { Object.assign(G, { party: d.party, mem: d.mem, inv: d.inv, money: d.money, flags: d.flags, chapter: d.chapter, dex: d.dex || { p: {}, e: {}, l: {}, end: {} }, ride: false, playTime: d.playTime || 0 }); enterMap(d.mapId, d.px, d.py, d.dir); }
-function newGame() { G.party = ['shinpachi']; G.mem = { shinpachi: mkMember('shinpachi', 1) }; G.inv = { karaimo: 3 }; G.money = 30; G.flags = {}; G.chapter = 0; G.dex = { p: {}, e: {}, l: {}, end: {} }; G.log = []; G.playTime = 0; G.ride = false; enterMap('kajiya', 4, 11, 0); }
+function applySave(d) { Object.assign(G, { party: d.party, waiting: d.waiting || [], mem: d.mem, inv: d.inv, money: d.money, flags: d.flags, chapter: d.chapter, dex: d.dex || { p: {}, e: {}, l: {}, end: {} }, ride: false, playTime: d.playTime || 0 }); enterMap(d.mapId, d.px, d.py, d.dir); }
+function newGame() { G.party = ['shinpachi']; G.waiting = []; G.mem = { shinpachi: mkMember('shinpachi', 1) }; G.inv = { karaimo: 3 }; G.money = 30; G.flags = {}; G.chapter = 0; G.dex = { p: {}, e: {}, l: {}, end: {} }; G.log = []; G.playTime = 0; G.ride = false; enterMap('kajiya', 4, 11, 0); }
 async function gameOver() {
   await fadeOut(); G.scene = 'title'; hideDlg(); bgm('sad');
   await card('力尽きた……', '最後に記録した場所から やり直します');
@@ -1206,13 +1249,24 @@ async function title() {
   }
 }
 function fit() {
-  const pad = $('#pad'), land = innerWidth > innerHeight * 1.15, touch = matchMedia('(pointer: coarse)').matches;
-  document.body.classList.toggle('land', land && touch); document.body.classList.toggle('touch', touch);
+  const pad = $('#pad'), touch = matchMedia('(pointer: coarse)').matches || /touch=1/.test(location.search), rot = !!(touch && OPT.rot && innerHeight > innerWidth);
+  const VW = rot ? innerHeight : innerWidth, VH = rot ? innerWidth : innerHeight, land = VW > VH * 1.15;
+  document.body.classList.toggle('rot', rot); document.body.classList.toggle('land', land && touch); document.body.classList.toggle('touch', touch);
+  const wrap = $('#wrap'); wrap.style.width = rot ? VW + 'px' : ''; wrap.style.height = rot ? VH + 'px' : '';
   const st = $('#stick'), slot = land ? $('#padL') : $('#stickSlot'); if (st && slot && st.parentNode !== slot) slot.appendChild(st);
-  const padH = touch && !land ? (pad.offsetHeight || 200) : 0, padW = touch && land ? 340 : 0;
-  const k = Math.min((innerWidth - padW) / SW, (innerHeight - padH) / SH);
+  const top = $('#topbar'), padH = touch && !land ? (pad.offsetHeight || 220) + (top.offsetHeight || 0) : 0, padW = touch && land ? 400 : 0;
+  const k = Math.min((VW - padW) / SW, (VH - padH) / SH);
   screenEl.style.transform = `scale(${k})`;
   const h = $('#holder'); h.style.width = SW * k + 'px'; h.style.height = SH * k + 'px';
+  updateTopbar();
 }
+const CH_NAME = ['序章', '第一章', '第二章', '第三章', '第四章', '第五章', '第六章', '第七章', '第八章', '第九章', '第十章', '第十一章', '第十二章', '終章'];
+function updateTopbar() {
+  const e = $('#tbInfo'); if (!e) return;
+  e.textContent = G.map && G.scene !== 'title' ? `${CH_NAME[G.chapter] || ''}　${G.mapId === '_room' ? G.map.name : (G.map.name || '')}\n${G.money ?? 0} 文` : '';
+}
+setInterval(updateTopbar, 1000);
+addEventListener('orientationchange', () => setTimeout(fit, 300));
+if (window.visualViewport) visualViewport.addEventListener('resize', fit);
 addEventListener('resize', fit);
 addEventListener('load', () => { Audio8.vol.bgm = OPT.bgm; Audio8.vol.sfx = OPT.sfx; fit(); updateHud(); title(); loop(); });

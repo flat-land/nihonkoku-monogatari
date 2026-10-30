@@ -57,7 +57,7 @@ const MAPS = {
         night: () => (F('gesshoQuest') && !F('gessho')) || F('night8'),
         weather: () => (F('bombarded') && G.chapter === 1 && !F('ch1end')) ? 'embers' : (G.chapter === 0 || G.chapter === 8) && !F('gesshoQuest') ? 'ash' : null,
         noRide: true, onEnter: STORY.kajiyaEnter,
-        labels: [[4, 8, '新八の家'], [18, 8, '西郷家'], [12, 13, '大久保家'], [17, 13, '道具屋'], [22, 13, '鍛冶屋'], [3, 19, '稽古場'], [27, 11, '甲突川']],
+        labels: [[4, 8, '新八の家'], [18, 8, '西郷家'], [12, 13, '大久保家'], [17, 13, '道具屋'], [22, 13, '鍛冶屋'], [3, 19, '稽古場（仲間の入れ替え）'], [27, 11, '甲突川']],
         warps: [{ x: 31, y: 11, to: 'kotsuki', x2: 1, y2: 10, dir: 2 }, { x: 8, y: 23, to: 'kaigan', x2: 8, y2: 1, dir: 0 }, { x: 8, y: 0, to: 'shiroyama', x2: 14, y2: 20, dir: 3, cond: () => G.chapter >= 8 }],
         locks: [{ x: 22, y: 10, key: 'key_kura', flag: 'kuraOpen' }],
         houses: [
@@ -76,6 +76,7 @@ const MAPS = {
           npc(12, 12, 'senkichi', STORY.senkichiJoin, { cond: () => G.chapter === 0 && !F('senkichi'), mark: true }),
           npc(5, 19, 'senpai', STORY.senpai, { dir: 1, cond: () => G.chapter <= 1, mark: true }),
           npc(3, 21, 'boy', STORY.tachikiBoy, { dir: 3 }),
+          npc(6, 18, 'elder', STORY.dojo, { dir: 0 }),
           npc(18, 12, 'saigo', STORY.saigo, { cond: () => G.chapter === 0 && !F('gesshoQuest') && F('tutorial'), mark: true }),
           npc(13, 17, 'okubo', STORY.okubo, { cond: () => G.chapter <= 1, mark: true }),
           npc(14, 17, 'togo', STORY.togoWait, { cond: () => G.chapter === 1 && !F('togo') }),
@@ -198,7 +199,7 @@ const MAPS = {
         labels: [[16, 2, '高千穂峰'], [6, 11, '塩浸温泉'], [6, 17, '宿']],
         warps: [{ x: 16, y: 23, to: 'kajiya', x2: 30, y2: 11, dir: 1 }],
         triggers: [{ x: 14, y: 1, w: 5, h: 3, cond: () => G.chapter === 3 && F('kirishimaIn') && !F('sakahoko'), run: STORY.sakahoko }],
-        houses: [hs(...inn, '湯治宿', { npcs: [npc(5, 4, 'innkeeper', STORY.inn)] }), hs(...inn2, '山の茶屋', { kind: 'shop', npcs: [npc(4, 3, 'merchant', () => shopTalk('dougu'))] })],
+        houses: [hs(...inn, '湯治宿', { npcs: [npc(5, 4, 'innkeeper', STORY.inn)] }), hs(...inn2, '山の茶屋', { kind: 'shop', npcs: [npc(4, 3, 'merchant', () => shopTalk('dougu')), npc(7, 5, 'woman', STORY.chaya)] })],
         look: { '16,1': () => N('山頂に、青銅の矛が 突き立っている。\n「天の逆鉾」――神話の時代から伝わる という。') },
         npcs: [
           npc(8, 13, 'ryoma', STORY.ryomaOnsen, { cond: () => G.chapter === 3 && F('sakahoko') && !F('onsen3'), mark: true }),
@@ -231,7 +232,7 @@ const MAPS = {
         houses: [
           hs(...hantei, '薩摩藩邸（二本松）', { w: 15, place: 'hamaguri', npcs: [npc(7, 4, 'komatsu', STORY.komatsu, { mark: true }), npc(3, 4, 'kido', STORY.kido3, { cond: () => G.chapter === 3 && !F('satcho') }), npc(11, 4, 'ryoma', STORY.ryoma3, { cond: () => G.chapter === 3 && !F('satcho') })], items: [chest(13, 5, 'hantei1', 'key_hanzo')] }),
           { x: 12, y: 4, name: '藩邸の蔵', kind: 'kura', w: 9, h: 7, items: [chest(2, 3, 'hz1', 'masakiyo'), chest(6, 3, 'hz2', 'kurobuta', 3), chest(4, 5, 'hz3', 'kiriko')] },
-          ...H.map((h, i) => hs(...h, ['武具屋', '道具屋', '茶屋', '町家', '宿屋', '町家', '寺', '町家', '町家', '町家', '町家', '町家'][i] || '町家', i === 0 ? { kind: 'shop', npcs: [npc(5, 3, 'merchant', () => shopTalk('kyoto'))] } : i === 1 ? { kind: 'shop', npcs: [npc(5, 3, 'merchant', () => shopTalk('kyotoDougu'))] } : i === 4 ? { npcs: [npc(5, 4, 'innkeeper', STORY.inn)] } : i === 6 ? { npcs: [npc(5, 4, 'monk', T('kyotoMonk'))] } : { npcs: [npc(5, 4, i % 2 ? 'woman' : 'elder', T('kyoto' + (i % 3)))], items: i % 3 === 0 ? [pot(8, 4, 'kh' + i, ['chiran', 'tsukeage', 'horoku', 'karukan'][i % 4])] : [] })),
+          ...H.map((h, i) => hs(...h, ['武具屋', '道具屋', '茶屋', '町家', '宿屋', '町家', '寺', '町家', '町家', '町家', '町家', '町家'][i] || '町家', i === 0 ? { kind: 'shop', npcs: [npc(5, 3, 'merchant', () => shopTalk('kyoto'))] } : i === 1 ? { kind: 'shop', npcs: [npc(5, 3, 'merchant', () => shopTalk('kyotoDougu'))] } : i === 2 ? { npcs: [npc(5, 4, 'woman', STORY.chaya)] }: i === 4 ? { npcs: [npc(5, 4, 'innkeeper', STORY.inn)] } : i === 6 ? { npcs: [npc(5, 4, 'monk', T('kyotoMonk'))] } : { npcs: [npc(5, 4, i % 2 ? 'woman' : 'elder', T('kyoto' + (i % 3)))], items: i % 3 === 0 ? [pot(8, 4, 'kh' + i, ['chiran', 'tsukeage', 'horoku', 'karukan'][i % 4])] : [] })),
         ],
         npcs: [
           npc(16, 8, 'woman', T('kyotoA')), npc(24, 15, 'elder', T('kyotoB')), npc(9, 22, 'child', T('kyotoC')),

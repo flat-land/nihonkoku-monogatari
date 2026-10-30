@@ -402,6 +402,7 @@ Object.assign(STORY, {
     await still(['明治十年九月二十四日。\n西郷隆盛、城山に没す。四十九歳。', '桐野利秋、別府晋介、辺見十郎太……\n最後まで従った者たちも、皆、倒れた。', '西南戦争は、終わった。'], 'shiroyama');
     chron('shiroyama'); visit('shiroyama'); meet('beppu');
     drop('saigo');
+    G.waiting = (G.waiting || []).filter(p => p !== 'kirino');
     if (G.party.includes('kirino')) { G.party = G.party.filter(p => p !== 'kirino'); rebuildChain(); }
     if (F('route_gov')) return STORY.chFinal();
     if (pts('bond') >= 3) {
@@ -475,7 +476,7 @@ Object.assign(STORY, {
     ], 'title');
     await card('クリア おめでとう！', '別の選択をすると、違う結末が見られます。\n（図鑑の「結末」から確認できます）', 6000);
     if (await ask(null, 'クリアの記録を残しますか？\n（第八章の分かれ道から やり直せる記録になります）')) {
-      G.chapter = 8; G.party = ['shinpachi', 'tsun', 'rival', 'kirino'].filter(id => G.mem[id]);
+      G.chapter = 8; G.party = ['shinpachi', 'tsun', 'rival', 'kirino'].filter(id => G.mem[id]); G.waiting = [];
       for (const k of ['branch', 'route_sat', 'route_gov', 'ch9', 'kuma9', 'kumaEnd', 'tabaru10', 'tabaruEnd', 'nagai', 'enoNight', 'enoEnd', 's12night', 'letterGiven', 'kioi', 'tenshuFire']) delete G.flags[k];
       for (const id of G.party) { const m = G.mem[id]; m.hp = mhp(m); m.ki = mki(m); }
       enterMap('shiroyama', 14, 13, 3); save();

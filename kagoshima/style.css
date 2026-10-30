@@ -117,27 +117,51 @@ html, body { margin: 0; height: 100%; background: #06060c; overflow: hidden; tou
 #screen.flash::after { content: ''; position: absolute; inset: 0; background: var(--flash, #fff); z-index: 30; animation: fl .4s forwards; pointer-events: none; }
 @keyframes fl { 0%, 40% { opacity: .85; } 20%, 60% { opacity: 0; } 50% { opacity: .6; } 100% { opacity: 0; } }
 
-/* ---- 操作パッド（スマホ） ---- */
+/* ---- 画面まわりの飾り（縦画面の余白を埋める） ---- */
+body { background-color: #0b0f22;
+  background-image: radial-gradient(ellipse at 50% 40%, transparent 30%, rgba(0,0,0,.55) 100%),
+    radial-gradient(circle at 50% 100%, transparent 36%, rgba(60,74,140,.32) 37% 41%, transparent 42% 54%, rgba(60,74,140,.32) 55% 59%, transparent 60% 72%, rgba(60,74,140,.32) 73% 77%, transparent 78%);
+  background-size: 100% 100%, 44px 22px; }
+body.touch #holder { box-shadow: 0 0 0 2px #0c0806, 0 0 0 4px #b8923a, 0 0 0 6px #3a1a10, 0 6px 24px rgba(0,0,0,.7); }
+#topbar { display: none; }
+body.touch:not(.land) #topbar { display: flex; flex: none; width: 100%; max-width: 560px; justify-content: space-between; align-items: flex-end; padding: calc(8px + env(safe-area-inset-top)) 16px 8px; font-family: 'DotGothic16', sans-serif; color: #c8b98a; font-size: 11px; }
+#topbar .tb-t { color: #8a7a58; letter-spacing: 2px; } #topbar .tb-t b { display: block; color: #ffe2a0; font-size: 18px; font-weight: normal; letter-spacing: 4px; text-shadow: 0 0 8px #c04a1a; }
+#tbInfo { text-align: right; line-height: 1.5; white-space: pre; }
+
+/* ---- 操作パッド（スマホ）：真ん中にスティック、まわりに矢印 ---- */
 #pad, .padside { display: none; }
-body.touch #pad { display: flex; width: 100%; max-width: 560px; flex: 1; min-height: 200px; max-height: 280px; padding: 8px 14px calc(10px + env(safe-area-inset-bottom)); justify-content: space-between; align-items: stretch; gap: 10px; }
-#stickSlot { flex: 1; display: flex; }
-#stick { position: relative; flex: 1; touch-action: none; border-radius: 16px; background: radial-gradient(circle at 50% 50%, rgba(80, 90, 150, .18), transparent 70%); min-width: 150px; }
-#stick .hint { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); color: #4a5070; font-family: 'DotGothic16', sans-serif; font-size: 11px; text-align: center; pointer-events: none; }
-#stickBase { position: absolute; width: 104px; height: 104px; margin: -52px 0 0 -52px; left: 50%; top: 50%; border-radius: 50%; border: 2px solid rgba(239, 230, 204, .35); background: rgba(30, 36, 70, .5); opacity: .5; transition: opacity .15s; pointer-events: none; }
-#stickBase.on { opacity: 1; }
-#stickKnob { position: absolute; left: 50%; top: 50%; width: 46px; height: 46px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #f8f0d8, #a89a78); box-shadow: 0 2px 6px #000; transform: translate(-50%, -50%); }
-#btns { display: flex; flex-direction: column; justify-content: space-between; gap: 8px; width: 190px; }
+body.touch #pad { display: flex; width: 100%; max-width: 560px; flex: 1; min-height: 210px; max-height: 300px; padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); justify-content: space-between; align-items: center; gap: 10px; }
+#stickSlot { flex: 1; display: flex; align-self: stretch; align-items: center; justify-content: center; }
+#stick { position: relative; touch-action: none; width: 184px; height: 184px; flex: none; }
+#dpad { position: absolute; inset: 0; border-radius: 50%; touch-action: none;
+  background: radial-gradient(circle at 50% 45%, #2a3060 0 30%, #1a1f40 31% 64%, #11152c 65% 100%);
+  box-shadow: inset 0 0 0 2px #b8923a, inset 0 0 0 4px #2a1a10, inset 0 -6px 14px rgba(0,0,0,.6), 0 4px 12px rgba(0,0,0,.6); }
+#dpad .arw { position: absolute; width: 0; height: 0; border: 15px solid transparent; opacity: .75; transition: opacity .08s, filter .08s; pointer-events: none; }
+#dpad .arw.u { left: 50%; top: 10px; margin-left: -15px; border-bottom: 22px solid #efe6cc; border-top-width: 0; }
+#dpad .arw.d { left: 50%; bottom: 10px; margin-left: -15px; border-top: 22px solid #efe6cc; border-bottom-width: 0; }
+#dpad .arw.l { top: 50%; left: 10px; margin-top: -15px; border-right: 22px solid #efe6cc; border-left-width: 0; }
+#dpad .arw.r { top: 50%; right: 10px; margin-top: -15px; border-left: 22px solid #efe6cc; border-right-width: 0; }
+#dpad .arw.on { opacity: 1; filter: drop-shadow(0 0 6px #ffd77a); }
+#dpad .arw.u.on { border-bottom-color: #ffd77a; } #dpad .arw.d.on { border-top-color: #ffd77a; } #dpad .arw.l.on { border-right-color: #ffd77a; } #dpad .arw.r.on { border-left-color: #ffd77a; }
+#stickKnob { position: absolute; left: 50%; top: 50%; width: 58px; height: 58px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff6dc, #c8b48a 55%, #7a6a4a); box-shadow: 0 3px 8px #000, inset 0 -3px 0 rgba(0,0,0,.25); transform: translate(-50%, -50%); pointer-events: none; }
+#btns { display: flex; flex-direction: column; justify-content: center; gap: 10px; width: 176px; }
 #btns .row { display: flex; gap: 6px; justify-content: flex-end; }
-#btns button { font-family: 'DotGothic16', sans-serif; background: #1d2444; color: #f3ecd8; border: 2px solid #efe6cc; border-radius: 9px; font-size: 12px; touch-action: none; padding: 6px 7px; }
+#btns button { font-family: 'DotGothic16', sans-serif; background: linear-gradient(#262e58, #161b38); color: #f3ecd8; border: 2px solid #b8923a; border-radius: 9px; font-size: 12px; touch-action: none; padding: 6px 7px; box-shadow: 0 2px 0 #000; }
 #btns button.on { background: #4a5aa0; } #btns button.lit { background: #8a5a1a; border-color: #ffd77a; color: #ffd77a; }
 #btns .ab { align-items: center; gap: 14px; }
 #btns .ab button { border-radius: 50%; font-size: 22px; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1; }
 #btns .ab button small { font-size: 8px; margin-top: 3px; }
-#btns .a { width: 78px; height: 78px; background: #7a2020; } #btns .b { width: 60px; height: 60px; margin-top: 26px; }
-/* 横画面：左にスティック、右にボタン */
+#btns .a { width: 80px; height: 80px; background: radial-gradient(circle at 35% 30%, #c84a3a, #7a2020); } #btns .b { width: 62px; height: 62px; margin-top: 26px; }
+/* 横画面：左にスティック、右にボタン（.rot は回転ロック中でも横向きに表示するモード） */
 body.land.touch #wrap { flex-direction: row; }
-body.land.touch .padside { display: flex; width: 170px; height: 100%; padding: 14px; }
-body.land.touch #pad { flex-direction: column; width: 170px; max-width: none; height: 100%; max-height: none; min-height: 0; padding: 14px 10px; }
+body.land.touch .padside { display: flex; align-items: center; justify-content: center; width: 200px; height: 100%; padding: 8px; }
+body.land.touch #pad { flex-direction: column; width: 190px; max-width: none; height: 100%; max-height: none; min-height: 0; padding: 10px; }
 body.land.touch #stickSlot { display: none; }
 body.land.touch #btns { width: 100%; height: 100%; justify-content: center; gap: 18px; }
 body.land.touch #btns .row.small { flex-wrap: wrap; justify-content: center; }
+body.rot #wrap { inset: auto; left: 0; top: 0; width: 100vh; height: 100vw; transform-origin: 0 0; transform: rotate(90deg) translateY(-100%); }
+#btns .row.small button { white-space: nowrap; font-size: 11px; padding: 5px 6px; }
+body.touch:not(.land) #btns .row.small:first-child { display: grid; grid-template-columns: 1fr 1fr; }
+/* 主要人物の顔絵（高画質）：会話窓の右上に重ねる */
+.bust { position: absolute; z-index: 11; pointer-events: none; image-rendering: auto; filter: drop-shadow(0 0 2px rgba(0,0,0,.9)) drop-shadow(2px 3px 0 rgba(0,0,0,.5)); }
+.dlg.hasbust .tx, .dlg.hasbust .nm { margin-right: 112px; }
